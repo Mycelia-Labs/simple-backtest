@@ -1,0 +1,86 @@
+"""Tests for the RSI/news signal integration."""
+
+import pandas as pd
+
+from simple_backtest.news import NewsArticle, build_daily_news_signal, score_title
+from simple_backtest.strategy.rsi_news import NewsAwareRSIStrategy, RSIStrategy, calculate_rsi
+
+
+def _state(shares: float = 0.0) -> dict:
+    return {
+        "cash": 10_000.0,
+        "total_shares": shares,
+        "portfolio_value": 10_000.0,
+        "positions": {},
+        "current_price": 100.0,
+        "is_last_day": False,
+    }
+
+
+def test_rsi_uses_point_in_time_series_and_has_expected_range():
+    prices = pd.Series([100, 99, 98, 99, 100, 101, 100, 99, 100, 101, 102, 101, 100, 99, 98])
+    result = calculate_rsi(prices, period=5)
+    assert result.dropna().between(0, 100).all()
+    assert result.index.equals(prices.index)
+
+
+def test_original_rsi_baseline_buys_on_oversold():
+    strategy = RSIStrategy(period=3, oversold=40, overbought=60, shares=10)
+    strategy._portfolio_state = _state()
+    prices = pd.Series([100, 99, 98, 97, 96], index=pd.date_range("2020-01-01", periods=5, tz="UTC"))
+    data = pd.DataFrame({"Close": prices})
+    prediction = strategy.predict(data, [])
+    assert prediction["signal"] == "buy"
+    assert prediction["size"] == 10
+
+
+def test_news_signal_does_not_use_future_articles():
+    features = build_daily_news_signal(
+        [
+            NewsArticle(
+                title="Apple faces investigation and weak outlook",
+                available_at=pd.Timestamp("2020-01-10 12:00", tz="UTC"),
+            )
+        ]
+    )
+    strategy = NewsAwareRSIStrategy(
+        features,
+        period=3,
+        oversold=40,
+        overbought=60,
+        shares=10,
+        min_news_for_entry=-0.1,
+    )
+    signal_before_article = strategy._latest_news_signal(pd.Timestamp("2020-01-09", tz="UTC"))
+    signal_after_article = strategy._latest_news_signal(pd.Timestamp("2020-01-10", tz="UTC"))
+    assert signal_before_article == 0.0
+    assert signal_after_article < 0.0
+
+
+def test_news_gate_blocks_negative_rsi_entry():
+    features = pd.DataFrame(
+        {"news_signal": [-1.0], "article_count": [1]},
+        index=pd.DatetimeIndex(["2020-01-10"], tz="UTC"),
+    )
+    strategy = NewsAwareRSIStrategy(
+        features,
+        period=3,
+        oversold=40,
+        overbought=60,
+        shares=10,
+        min_news_for_entry=-0.1,
+    )
+    strategy._portfolio_state = _state()
+    dates = pd.date_range("2020-01-06", periods=5, tz="UTC")
+    data = pd.DataFrame({"Close": [100, 99, 98, 97, 96]}, index=dates)
+    # The article was available on 2020-01-10, while this decision is made
+    # using the window ending on 2020-01-10; it is therefore usable.
+    prediction = strategy.predict(data, [])
+    assert prediction["signal"] == "hold"
+
+
+def test_score_title_is_bounded_and_transparent():
+    assert score_title("strong growth and record profits") > 0
+    assert score_title("fraud investigation and weak outlook") < 0
+    assert -1 <= score_title("bullish upgrade") <= 1
+    assert score_title("market commentary") == 0

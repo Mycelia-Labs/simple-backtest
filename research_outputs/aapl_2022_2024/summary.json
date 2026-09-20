@@ -1,0 +1,10 @@
+{
+  "comparison_status": "news_unavailable",
+  "news_status": {
+    "source": "GDELT DOC 2.0",
+    "availability_timestamp": "seendate",
+    "query": "AAPL OR Apple",
+    "status": "unavailable",
+    "reason": "HTTP Error 429: Too Many Requests"
+  }
+}

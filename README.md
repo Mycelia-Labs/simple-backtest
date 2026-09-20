@@ -151,7 +151,55 @@ Max Drawdown: 30.60%
 Win Rate: 100.00%
 ```
 
-## 📚 Documentation
+## 📰 Historical News + RSI Research Example
+
+The repository now includes a reusable `RSIStrategy` and
+`NewsAwareRSIStrategy`. The latter keeps the original RSI entry/exit rules but
+adds a conservative, point-in-time news gate: negative news can block an
+oversold entry or force an exit. The strategy module can delegate RSI
+calculations to Itoflow's public helper, and the runner loads OHLCV data through
+Itoflow's provider-routed `get_daily_ohlcv` API. The comparison keeps the
+original notebook's rolling RSI backend for both legs so the news gate is the
+only strategy difference.
+
+Historical news is intentionally sourced separately from market data. The
+example uses GDELT DOC 2.0 article-list results and treats GDELT's `seendate` as
+an availability timestamp. It does not use a later article retrieval time or
+assume that the market-data provider contains historical news. The signal is
+aggregated by availability date and the strategy only reads dates at or before
+the last completed bar in its lookback window, so future articles cannot affect
+a trade.
+
+Run a held-out comparison (requires the Itoflow quant package and network
+access to GDELT):
+
+```bash
+python scripts/run_rsi_news_comparison.py \\
+  --symbol AAPL.US \\
+  --start 2020-01-01 --end 2025-01-01 \\
+  --holdout-start 2023-01-01 \\
+  --output-dir research_outputs/aapl
+```
+
+The runner uses identical dates, initial capital, open execution, 0.1%
+commission, RSI parameters, and final liquidation for both strategies. It
+writes `comparison.csv` with total return, annualized Sharpe ratio, maximum
+drawdown, and trade count, plus `summary.json`, the news article cache, and the
+daily news signal. If historical news is unavailable, it still writes the
+reproducible RSI baseline and marks the news comparison as unavailable rather
+than substituting an empty or fabricated signal. The default news thresholds
+are fixed before the held-out run; they are not tuned on the holdout period.
+
+The package tests use deterministic synthetic inputs and do not call external
+services:
+
+```bash
+pytest tests/test_rsi_news.py -q
+```
+
+This remains a simulation/research example. It does not place orders or connect
+to a broker.
+
 
 ### Creating a Custom Strategy
 
