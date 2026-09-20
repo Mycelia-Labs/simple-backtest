@@ -51,16 +51,24 @@ def test_news_signal_does_not_use_future_articles():
         shares=10,
         min_news_for_entry=-0.1,
     )
-    signal_before_article = strategy._latest_news_signal(pd.Timestamp("2020-01-09", tz="UTC"))
-    signal_after_article = strategy._latest_news_signal(pd.Timestamp("2020-01-10", tz="UTC"))
-    assert signal_before_article == 0.0
+    signal_before_morning_article = strategy._latest_news_signal(
+        pd.Timestamp("2020-01-10 09:00", tz="UTC")
+    )
+    signal_after_article = strategy._latest_news_signal(
+        pd.Timestamp("2020-01-10 13:00", tz="UTC")
+    )
+    signal_before_article_date = strategy._latest_news_signal(
+        pd.Timestamp("2020-01-09 23:59", tz="UTC")
+    )
+    assert signal_before_morning_article == 0.0
     assert signal_after_article < 0.0
+    assert signal_before_article_date == 0.0
 
 
 def test_news_gate_blocks_negative_rsi_entry():
     features = pd.DataFrame(
         {"news_signal": [-1.0], "article_count": [1]},
-        index=pd.DatetimeIndex(["2020-01-10"], tz="UTC"),
+        index=pd.DatetimeIndex(["2020-01-10 12:00"], tz="UTC"),
     )
     strategy = NewsAwareRSIStrategy(
         features,
@@ -71,10 +79,10 @@ def test_news_gate_blocks_negative_rsi_entry():
         min_news_for_entry=-0.1,
     )
     strategy._portfolio_state = _state()
-    dates = pd.date_range("2020-01-06", periods=5, tz="UTC")
+    dates = pd.date_range("2020-01-07", periods=5, tz="UTC")
     data = pd.DataFrame({"Close": [100, 99, 98, 97, 96]}, index=dates)
-    # The article was available on 2020-01-10, while this decision is made
-    # using the window ending on 2020-01-10; it is therefore usable.
+    # The article was available at noon on 2020-01-10 and the decision is
+    # made using the window ending on 2020-01-11; it is therefore usable.
     prediction = strategy.predict(data, [])
     assert prediction["signal"] == "hold"
 

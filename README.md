@@ -166,9 +166,10 @@ Historical news is intentionally sourced separately from market data. The
 example uses GDELT DOC 2.0 article-list results and treats GDELT's `seendate` as
 an availability timestamp. It does not use a later article retrieval time or
 assume that the market-data provider contains historical news. The signal is
-aggregated by availability date and the strategy only reads dates at or before
-the last completed bar in its lookback window, so future articles cannot affect
-a trade.
+aggregated into an event-level signal while preserving each article's exact
+availability timestamp. The strategy uses a strict prior-timestamp cutoff; for
+daily bars, the engine supplies the prior completed bar, so same-day intraday
+articles cannot affect that morning's trade.
 
 Run a held-out comparison (requires the Itoflow quant package and network
 access to GDELT):

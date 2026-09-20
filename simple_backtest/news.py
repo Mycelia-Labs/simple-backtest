@@ -160,11 +160,12 @@ def score_title(title: str) -> float:
 
 
 def build_daily_news_signal(articles: Iterable[NewsArticle]) -> pd.DataFrame:
-    """Aggregate article scores by GDELT availability date.
+    """Build an event-level signal stream keyed by GDELT availability timestamps.
 
-    The resulting row for date D contains only articles observed on D.  A
-    strategy using the row on a subsequent bar therefore cannot see articles
-    that had not yet been observed at its decision point.
+    The resulting event stream preserves each article's exact GDELT
+    availability timestamp. ``NewsAwareRSIStrategy`` applies a recent-event
+    window at the true decision timestamp, so an article seen at noon cannot
+    affect a morning decision on the same date.
     """
     rows = []
     for article in articles:
@@ -183,14 +184,12 @@ def build_daily_news_signal(articles: Iterable[NewsArticle]) -> pd.DataFrame:
             }
         )
     if not rows:
-        return pd.DataFrame(columns=["news_signal", "article_count"])
-    frame = pd.DataFrame(rows)
-    daily = frame.groupby("available_date").agg(
-        news_signal=("article_score", "mean"),
-        article_count=("article_score", "size"),
+        return pd.DataFrame(columns=["news_signal", "article_count", "available_date"])
+    frame = pd.DataFrame(rows).set_index("available_at").sort_index()
+    frame["article_count"] = 1
+    return frame[["article_score", "article_count", "available_date"]].rename(
+        columns={"article_score": "news_signal"}
     )
-    daily.index = pd.DatetimeIndex(daily.index, tz="UTC")
-    return daily.sort_index()
 
 
 def _as_utc(value: datetime) -> datetime:

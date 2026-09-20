@@ -221,7 +221,8 @@ def main() -> int:
         try:
             from ito_quant.alpha import calculate_ic
 
-            signal = news_features["news_signal"].reindex(prices.index.normalize()).fillna(0.0)
+            signal = news_features["news_signal"].resample("1D").mean()
+            signal = signal.reindex(prices.index.normalize()).fillna(0.0)
             forward_returns = prices["Close"].pct_change()
             ic = calculate_ic(signal.shift(1), forward_returns, method="spearman")
             summary["news_ic_prior_day_vs_return"] = float(ic.ic)

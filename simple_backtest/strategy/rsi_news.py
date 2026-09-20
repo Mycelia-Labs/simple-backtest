@@ -142,7 +142,7 @@ class NewsAwareRSIStrategy(RSIStrategy):
         if "news_signal" not in news_features.columns:
             raise ValueError("news_features must contain a 'news_signal' column")
         features = news_features.copy()
-        features.index = pd.to_datetime(features.index, utc=True).normalize()
+        features.index = pd.to_datetime(features.index, utc=True)
         features = features[~features.index.duplicated(keep="last")].sort_index()
         features["news_signal"] = pd.to_numeric(features["news_signal"], errors="coerce")
         self.news_features = features
@@ -154,14 +154,16 @@ class NewsAwareRSIStrategy(RSIStrategy):
         """Return the latest still-fresh signal available before ``as_of``."""
         if self.news_features.empty:
             return 0.0
-        as_of = pd.Timestamp(as_of).tz_convert("UTC").normalize()
-        eligible = self.news_features.loc[self.news_features.index <= as_of]
+        as_of = pd.Timestamp(as_of)
+        as_of = as_of.tz_localize("UTC") if as_of.tzinfo is None else as_of.tz_convert("UTC")
+        eligible = self.news_features.loc[self.news_features.index < as_of]
         if eligible.empty:
             return 0.0
-        latest_date = eligible.index[-1]
-        if (as_of - latest_date).days > self.max_news_age_days:
+        window_start = as_of - pd.Timedelta(days=self.max_news_age_days)
+        recent = eligible.loc[eligible.index >= window_start]
+        if recent.empty:
             return 0.0
-        value = eligible.iloc[-1]["news_signal"]
+        value = recent["news_signal"].mean()
         return 0.0 if pd.isna(value) else float(value)
 
     def predict(self, data: pd.DataFrame, trade_history: List[Dict[str, Any]]) -> Dict[str, Any]:
