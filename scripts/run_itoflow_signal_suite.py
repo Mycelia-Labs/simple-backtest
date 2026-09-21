@@ -304,15 +304,16 @@ def main() -> int:
 
     fundamental_rows: list[dict[str, Any]] = []
     fundamental_target = target_symbols[0] if target_symbols[0] in DEFAULT_STOCK_UNIVERSE else None
-    if args.skip_fundamentals or fundamental_target is None:
+    if args.skip_fundamentals:
         fundamental_status = "unavailable"
-        fundamental_reason = "Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals."
+        fundamental_reason = "Operator-requested price-only rerun; this is not the canonical MSFT suite."
         for variant in FUNDAMENTAL_VARIANTS:
-            fundamental_rows.append({
-                "strategy": f"{target_symbols[0]}:{variant}",
-                "status": "unavailable",
-                "unavailable_reason": fundamental_reason,
-            })
+            fundamental_rows.append({"strategy": f"{fundamental_target or target_symbols[0]}:{variant}", "status": "unavailable", "unavailable_reason": fundamental_reason})
+    elif fundamental_target is None:
+        fundamental_status = "unavailable"
+        fundamental_reason = "Skipped: target is not in the stock-only universe; ETF fundamentals are not applied."
+        for variant in FUNDAMENTAL_VARIANTS:
+            fundamental_rows.append({"strategy": f"{target_symbols[0]}:{variant}", "status": "unavailable", "unavailable_reason": fundamental_reason})
     else:
         decision_dates = pd.DatetimeIndex(
             pd.Series(data[fundamental_target].index).groupby(data[fundamental_target].index.to_period("M")).min().values
@@ -384,10 +385,14 @@ def main() -> int:
     }
     raw["benchmark"] = f"{benchmark_names[0]} and VOO.US:buy_hold (when present) use Itoflow provider Close (adjusted series; raw_close retained in OHLCV artifacts) with the same commission and date window."
     if comparison_common_dates is not None:
+        heldout_dates = comparison_common_dates[comparison_common_dates >= pd.Timestamp(args.holdout_start, tz="UTC")]
         raw["common_benchmark_calendar"] = {
-            "start": pd.Timestamp(comparison_common_dates[0]).date().isoformat(),
-            "end": pd.Timestamp(comparison_common_dates[-1]).date().isoformat(),
-            "count": int(len(comparison_common_dates)),
+            "full_coverage_start": pd.Timestamp(comparison_common_dates[0]).date().isoformat(),
+            "full_coverage_end": pd.Timestamp(comparison_common_dates[-1]).date().isoformat(),
+            "full_coverage_count": int(len(comparison_common_dates)),
+            "heldout_start": pd.Timestamp(heldout_dates[0]).date().isoformat(),
+            "heldout_end": pd.Timestamp(heldout_dates[-1]).date().isoformat(),
+            "heldout_count": int(len(heldout_dates)),
             "price_treatment": "Itoflow provider adjusted Close for benchmark/strategy accounting; raw_close retained in OHLCV artifacts; dividends are reflected only insofar as the provider adjusted series reflects them.",
         }
     raw["fundamental_decision_dates"] = "Not used for ETF-only run; stock-only variants are explicitly unavailable." if fundamental_target is None else "First available trading date of each calendar month; scores use only fundamentals with available_date strictly before each date."
