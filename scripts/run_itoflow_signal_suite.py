@@ -222,6 +222,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-symbol", default=None, help="Run one target, e.g. SPY.US, instead of default AAPL/VOO pair.")
     parser.add_argument("--market-proxy", default=None, help="Separately loaded broad-market proxy for residual mean reversion.")
     parser.add_argument("--last-five-years", action="store_true", help="Discover latest target close and derive a five-year evaluation interval plus 300-row warm-up.")
+    parser.add_argument("--skip-fundamentals", action="store_true", help="Skip stock-only dated fundamentals for a price-only rerun.")
     return parser
 
 
@@ -253,8 +254,18 @@ def main() -> int:
     }
 
     data = {symbol: load_ohlcv(symbol, args.start, args.end) for symbol in target_symbols}
+    comparison_common_dates = None
+    if target_symbols == ["MSFT.US"]:
+        voo_for_alignment = load_ohlcv("VOO.US", args.start, args.end)
+        comparison_common_dates = data["MSFT.US"].index.intersection(voo_for_alignment.index)
+        data["MSFT.US"] = data["MSFT.US"].loc[comparison_common_dates]
+        voo_for_alignment = voo_for_alignment.loc[comparison_common_dates]
     market_symbol = args.market_proxy or ("VOO.US" if target_symbols == ["SPY.US"] else "SPY.US")
     market_prices = load_ohlcv(market_symbol, args.start, args.end)["Close"]
+    if comparison_common_dates is not None:
+        market_prices = market_prices.reindex(comparison_common_dates).dropna()
+        data["MSFT.US"] = data["MSFT.US"].loc[data["MSFT.US"].index.intersection(market_prices.index)]
+        comparison_common_dates = data["MSFT.US"].index
     raw["market_proxy"] = market_symbol
     raw["settings"]["latest_available_close"] = {
         symbol: pd.Timestamp(frame.index[-1]).date().isoformat() for symbol, frame in data.items()
@@ -272,15 +283,28 @@ def main() -> int:
         benchmark = FullyInvestedBuyAndHoldStrategy(name=benchmark_name)
         price_rows.append(run_strategy(benchmark.get_name(), benchmark, data[symbol], args.holdout_start))
         benchmark_names.append(benchmark_name)
+    comparison_benchmark = None
+    if target_symbols == ["MSFT.US"]:
+        voo_benchmark_prices = load_ohlcv("VOO.US", args.start, args.end).loc[comparison_common_dates]
+        voo_benchmark = FullyInvestedBuyAndHoldStrategy(name="VOO.US:buy_hold")
+        price_rows.append(run_strategy(voo_benchmark.get_name(), voo_benchmark, voo_benchmark_prices, args.holdout_start))
+        comparison_benchmark = "VOO.US:buy_hold"
+        voo_benchmark_prices.to_csv(args.output_dir / "VOO_US_ohlcv.csv")
 
     for symbol, frame in data.items():
         frame.to_csv(args.output_dir / f"{symbol.replace('.', '_')}_ohlcv.csv")
     benchmark_name = benchmark_names[0] if len(benchmark_names) == 1 else None
     price_comparison = add_deltas(price_rows, benchmark_name=benchmark_name)
+    if comparison_benchmark is not None:
+        voo_row = price_comparison.loc[price_comparison["strategy"] == comparison_benchmark].iloc[0]
+        price_comparison["return_delta_vs_voo_benchmark_pct_points"] = price_comparison["total_return"] - voo_row["total_return"]
+        price_comparison["sharpe_delta_vs_voo_benchmark"] = price_comparison["sharpe_ratio"] - voo_row["sharpe_ratio"]
+        price_comparison["drawdown_delta_vs_voo_benchmark_pct_points"] = price_comparison["max_drawdown"] - voo_row["max_drawdown"]
     price_comparison.to_csv(args.output_dir / "price_comparison.csv", index=False)
 
     fundamental_rows: list[dict[str, Any]] = []
-    if target_symbols != ["AAPL.US", "VOO.US"]:
+    fundamental_target = target_symbols[0] if target_symbols[0] in DEFAULT_STOCK_UNIVERSE else None
+    if args.skip_fundamentals or fundamental_target is None:
         fundamental_status = "unavailable"
         fundamental_reason = "Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals."
         for variant in FUNDAMENTAL_VARIANTS:
@@ -291,7 +315,7 @@ def main() -> int:
             })
     else:
         decision_dates = pd.DatetimeIndex(
-            pd.Series(data["AAPL.US"].index).groupby(data["AAPL.US"].index.to_period("M")).min().values
+            pd.Series(data[fundamental_target].index).groupby(data[fundamental_target].index.to_period("M")).min().values
         ).tz_localize("UTC")
         try:
             stock_price_frame = get_daily_prices(
@@ -322,7 +346,7 @@ def main() -> int:
             fundamental_status = "unavailable"
             fundamental_reason = f"Required point-in-time price inputs unavailable: {missing_price_inputs}"
             for variant in FUNDAMENTAL_VARIANTS:
-                fundamental_rows.append({"strategy": f"AAPL.US:{variant}", "status": "unavailable", "unavailable_reason": fundamental_reason})
+                fundamental_rows.append({"strategy": f"{fundamental_target}:{variant}", "status": "unavailable", "unavailable_reason": fundamental_reason})
         else:
             try:
                 fundamental_result = build_point_in_time_fundamental_signals(
@@ -341,14 +365,14 @@ def main() -> int:
                 if score_frames:
                     pd.concat(score_frames, ignore_index=True).to_csv(args.output_dir / "point_in_time_value_quality_scores.csv", index=False)
                 fundamental_rows.extend(run_fundamental_variants(
-                    "AAPL.US", data["AAPL.US"], market_prices,
-                    fundamental_result.scores_by_symbol.get("AAPL.US"), args.holdout_start
+                    fundamental_target, data[fundamental_target], market_prices,
+                    fundamental_result.scores_by_symbol.get(fundamental_target), args.holdout_start
                 ))
             except Exception as exc:
                 fundamental_status = "unavailable"
                 fundamental_reason = f"Itoflow dated fundamentals failed: {type(exc).__name__}: {exc}"
                 for variant in FUNDAMENTAL_VARIANTS:
-                    fundamental_rows.append({"strategy": f"AAPL.US:{variant}", "status": "unavailable", "unavailable_reason": fundamental_reason})
+                    fundamental_rows.append({"strategy": f"{fundamental_target}:{variant}", "status": "unavailable", "unavailable_reason": fundamental_reason})
     fundamental_comparison = add_deltas(fundamental_rows, benchmark_name=None)
     fundamental_comparison.to_csv(args.output_dir / "fundamental_comparison.csv", index=False)
 
@@ -358,8 +382,15 @@ def main() -> int:
         "input_semantics": "Itoflow load_fundamentals_history available_date with publication_lag_days=1; derived PE/ROE/margins; no current screener snapshot backfill",
         "unavailable_reason": fundamental_reason,
     }
-    raw["benchmark"] = f"{benchmark_names[0]} uses Itoflow provider Close (adjusted series; raw_close retained in OHLCV artifacts) with the same commission and date window."
-    raw["fundamental_decision_dates"] = "Not used for ETF-only run; stock-only variants are explicitly unavailable." if target_symbols != ["AAPL.US", "VOO.US"] else "First available trading date of each calendar month; scores use only fundamentals with available_date strictly before each date."
+    raw["benchmark"] = f"{benchmark_names[0]} and VOO.US:buy_hold (when present) use Itoflow provider Close (adjusted series; raw_close retained in OHLCV artifacts) with the same commission and date window."
+    if comparison_common_dates is not None:
+        raw["common_benchmark_calendar"] = {
+            "start": pd.Timestamp(comparison_common_dates[0]).date().isoformat(),
+            "end": pd.Timestamp(comparison_common_dates[-1]).date().isoformat(),
+            "count": int(len(comparison_common_dates)),
+            "price_treatment": "Itoflow provider adjusted Close for benchmark/strategy accounting; raw_close retained in OHLCV artifacts; dividends are reflected only insofar as the provider adjusted series reflects them.",
+        }
+    raw["fundamental_decision_dates"] = "Not used for ETF-only run; stock-only variants are explicitly unavailable." if fundamental_target is None else "First available trading date of each calendar month; scores use only fundamentals with available_date strictly before each date."
     raw["news"] = "Not used; this suite is independent of the unavailable GDELT feed."
     with (args.output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(raw, handle, indent=2, default=str)

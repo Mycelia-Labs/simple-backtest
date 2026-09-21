@@ -1,0 +1,58 @@
+{
+  "settings": {
+    "start": "2020-07-13",
+    "end": "2026-09-19",
+    "holdout_start": "2021-09-20",
+    "target_symbols": [
+      "MSFT.US"
+    ],
+    "latest_available_close": {
+      "MSFT.US": "2026-09-18"
+    },
+    "date_policy": "latest provider close minus five calendar years; 300 prior trading rows reserved as warm-up",
+    "warmup_start": "2020-07-13",
+    "evaluation_start": "2021-09-20",
+    "evaluation_end": "2026-09-18"
+  },
+  "market_proxy": "SPY.US",
+  "fundamentals": {
+    "status": "unavailable",
+    "universe": [
+      "AAPL.US",
+      "MSFT.US",
+      "GOOGL.US",
+      "AMZN.US",
+      "META.US",
+      "NVDA.US",
+      "JPM.US",
+      "JNJ.US",
+      "XOM.US",
+      "PG.US",
+      "UNH.US",
+      "HD.US",
+      "CVX.US",
+      "COST.US",
+      "AVGO.US",
+      "BAC.US",
+      "WMT.US",
+      "PFE.US",
+      "KO.US",
+      "ORCL.US",
+      "CSCO.US",
+      "CRM.US",
+      "ADBE.US",
+      "MRK.US"
+    ],
+    "input_semantics": "Itoflow load_fundamentals_history available_date with publication_lag_days=1; derived PE/ROE/margins; no current screener snapshot backfill",
+    "unavailable_reason": "Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals."
+  },
+  "benchmark": "MSFT.US:buy_hold and VOO.US:buy_hold (when present) use Itoflow provider Close (adjusted series; raw_close retained in OHLCV artifacts) with the same commission and date window.",
+  "common_benchmark_calendar": {
+    "start": "2020-07-13",
+    "end": "2026-09-18",
+    "count": 1555,
+    "price_treatment": "Itoflow provider adjusted Close for benchmark/strategy accounting; raw_close retained in OHLCV artifacts; dividends are reflected only insofar as the provider adjusted series reflects them."
+  },
+  "fundamental_decision_dates": "First available trading date of each calendar month; scores use only fundamentals with available_date strictly before each date.",
+  "news": "Not used; this suite is independent of the unavailable GDELT feed."
+}

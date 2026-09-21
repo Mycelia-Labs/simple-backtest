@@ -1,0 +1,4 @@
+strategy,status,unavailable_reason
+MSFT.US:value_gate,unavailable,Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals.
+MSFT.US:quality_gate,unavailable,Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals.
+MSFT.US:value_quality_gate,unavailable,Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals.
