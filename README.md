@@ -276,7 +276,7 @@ agent is invoked at historical steps. It keeps the original `rsi_baseline`
 unchanged and compares independently selectable variants:
 
 - `itoflow_rsi` — Itoflow `calculate_rsi`; kept separate from new signals.
-- `mean_reversion` — Itoflow `mean_reversion_signal(method="residual")` with a separately loaded `SPY.US` market proxy; it records a VOO fallback only if SPY is unavailable.
+- `mean_reversion` — Itoflow `mean_reversion_signal(method="residual")` with a separately loaded broad-market proxy; the SPY mode uses `VOO.US` as the proxy and aligns it to the SPY dates.
 - `supertrend` — Itoflow `calculate_supertrend()`.
 - `dip_score` — Itoflow `calculate_dip_score()`.
 - `vol_scaled` — Itoflow RSI direction plus separately tested `calculate_volatility_scaled_position_size()` sizing.
