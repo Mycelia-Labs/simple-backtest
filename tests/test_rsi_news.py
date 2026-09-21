@@ -17,7 +17,7 @@ from ito_quant.alpha import (
 from ito_quant.market_data.indicators import calculate_atr, calculate_supertrend
 
 from simple_backtest import Backtest, BacktestConfig
-from simple_backtest.fundamental_signals import _latest_metric_as_of
+from simple_backtest.fundamental_signals import _build_cross_section_scores, _latest_metric_as_of
 from simple_backtest.news import (
     GDELTNewsProvider,
     NewsArticle,
@@ -87,7 +87,22 @@ def test_original_rsi_baseline_buys_on_oversold():
     assert prediction["size"] == 10
 
 
-def test_value_and_quality_helpers_use_a_multi_stock_cross_section():
+def test_value_and_quality_eligibility_are_independent():
+    frame = pd.DataFrame(
+        {
+            "pe_ratio": [float("nan")] * 20,
+            "roe": np.linspace(0.05, 0.25, 20),
+            "profit_margin": np.linspace(0.05, 0.20, 20),
+            "roa": np.linspace(0.02, 0.15, 20),
+            "operating_margin": np.linspace(0.04, 0.25, 20),
+        },
+        index=[f"STOCK{i}.US" for i in range(20)],
+    )
+    value, quality = _build_cross_section_scores(frame)
+    assert value.isna().all()
+    assert quality.notna().sum() == 20
+
+
     symbols = [f"STOCK{i}.US" for i in range(20)]
     frame = pd.DataFrame(
         {

@@ -46,14 +46,14 @@ DEFAULT_STOCK_UNIVERSE = [
     "MRK.US",
 ]
 
-_REQUIRED_METRICS = {
+_QUALITY_METRICS = {
     "total_equity",
     "total_assets",
     "total_revenue",
     "net_income",
     "operatingIncome",
-    "shares_outstanding",
 }
+_VALUE_METRICS = _QUALITY_METRICS | {"shares_outstanding"}
 
 
 class FundamentalHistoryUnavailable(RuntimeError):
@@ -100,9 +100,9 @@ def _cross_section_at(
         price = float(close.iloc[-1])
         values = {
             metric: _latest_metric_as_of(panel, symbol, metric, as_of)
-            for metric in _REQUIRED_METRICS
+            for metric in _VALUE_METRICS
         }
-        if any(value is None for value in values.values()):
+        if any(values[metric] is None for metric in _QUALITY_METRICS):
             continue
         equity = values["total_equity"]
         assets = values["total_assets"]
@@ -110,12 +110,12 @@ def _cross_section_at(
         net_income = values["net_income"]
         operating_income = values["operatingIncome"]
         shares = values["shares_outstanding"]
-        if equity <= 0 or assets <= 0 or revenue <= 0 or shares <= 0:
+        if equity <= 0 or assets <= 0 or revenue <= 0:
             continue
         rows.append(
             {
                 "symbol": symbol,
-                "pe_ratio": price / (net_income / shares) if net_income > 0 else float("nan"),
+                "pe_ratio": price / (net_income / shares) if shares is not None and shares > 0 and net_income > 0 else float("nan"),
                 "roe": net_income / equity,
                 "profit_margin": net_income / revenue,
                 "roa": net_income / assets,
@@ -124,6 +124,20 @@ def _cross_section_at(
             }
         )
     return pd.DataFrame(rows).set_index("symbol") if rows else pd.DataFrame()
+
+
+def _build_cross_section_scores(cross_section: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Build value and quality independently; one missing input cannot suppress the other."""
+    value = pd.Series(float("nan"), index=cross_section.index, dtype=float)
+    quality = pd.Series(float("nan"), index=cross_section.index, dtype=float)
+    if cross_section["pe_ratio"].notna().sum() >= 20:
+        value_frame = cross_section.loc[cross_section["pe_ratio"].notna()]
+        value.loc[value_frame.index] = build_value_signal(value_frame, metric="pe_ratio")
+    quality_columns = ["roe", "profit_margin", "roa", "operating_margin"]
+    quality_frame = cross_section.loc[cross_section[quality_columns].notna().sum(axis=1).ge(1)]
+    if len(quality_frame) >= 20:
+        quality.loc[quality_frame.index] = build_quality_signal(quality_frame, metrics=quality_columns)
+    return value, quality
 
 
 def build_point_in_time_fundamental_signals(
@@ -144,40 +158,41 @@ def build_point_in_time_fundamental_signals(
     panel = history.panel.copy()
     panel["available_date"] = pd.to_datetime(panel["available_date"], utc=True)
     available_metrics = set(panel["canonical_metric"].dropna().unique())
-    missing = sorted(_REQUIRED_METRICS - available_metrics)
-    if missing:
+    missing_quality = sorted(_QUALITY_METRICS - available_metrics)
+    missing_value = sorted(_VALUE_METRICS - available_metrics)
+    if missing_quality:
         return FundamentalSignalResult(
             scores_by_symbol={},
             panel=panel,
             diagnostics=history.symbol_diagnostics,
             universe=symbols,
             status="unavailable",
-            unavailable_reason=f"Missing dated fundamental metrics: {missing}",
+            unavailable_reason=f"Missing dated quality fundamental metrics: {missing_quality}; value metrics additionally missing: {missing_value}",
         )
     if set(history.successful_symbols) != set(symbols):
-        return FundamentalSignalResult(
-            scores_by_symbol={},
-            panel=panel,
-            diagnostics=history.symbol_diagnostics,
-            universe=symbols,
-            status="unavailable",
-            unavailable_reason=f"Fundamentals history failed for symbols: {history.failed_symbols}",
-        )
+        failed = getattr(history, "failed_symbols", {})
+        failed_symbols = list(failed) if isinstance(failed, dict) else list(failed or [])
+        # Preserve independently usable quality scores when only a value input
+        # (for example shares outstanding) is unavailable.
+        available_symbols = tuple(symbol for symbol in symbols if symbol in history.successful_symbols)
+        if len(available_symbols) < 20:
+            return FundamentalSignalResult(
+                scores_by_symbol={},
+                panel=panel,
+                diagnostics=history.symbol_diagnostics,
+                universe=symbols,
+                status="unavailable",
+                unavailable_reason=f"Fundamentals history failed for symbols: {failed_symbols}; valid universe below 20.",
+            )
+    else:
+        available_symbols = symbols
 
     rows_by_symbol: dict[str, list[dict[str, float | str | pd.Timestamp]]] = {symbol: [] for symbol in symbols}
     for as_of in decision_dates:
-        cross_section = _cross_section_at(panel, prices, pd.Timestamp(as_of), symbols)
-        if cross_section.empty or len(cross_section) < 20:
+        cross_section = _cross_section_at(panel, prices, pd.Timestamp(as_of), available_symbols)
+        if cross_section.empty:
             continue
-        if cross_section["pe_ratio"].notna().sum() < 20:
-            continue
-        if cross_section[["roe", "profit_margin", "roa", "operating_margin"]].notna().sum(axis=1).ge(1).sum() < 20:
-            continue
-        value = build_value_signal(cross_section, metric="pe_ratio")
-        quality = build_quality_signal(
-            cross_section,
-            metrics=["roe", "profit_margin", "roa", "operating_margin"],
-        )
+        value, quality = _build_cross_section_scores(cross_section)
         for symbol in cross_section.index:
             rows_by_symbol[symbol].append(
                 {
