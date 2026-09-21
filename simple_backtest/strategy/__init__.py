@@ -5,6 +5,7 @@ from simple_backtest.strategy.buy_and_hold import BuyAndHoldStrategy
 from simple_backtest.strategy.dca import DCAStrategy
 from simple_backtest.strategy.moving_average import MovingAverageStrategy
 from simple_backtest.strategy.rsi_news import NewsAwareRSIStrategy, RSIStrategy
+from simple_backtest.strategy.itoflow_signals import FullyInvestedBuyAndHoldStrategy, ItoflowSignalStrategy
 
 __all__ = [
     "Strategy",
@@ -13,4 +14,6 @@ __all__ = [
     "MovingAverageStrategy",
     "RSIStrategy",
     "NewsAwareRSIStrategy",
+    "ItoflowSignalStrategy",
+    "FullyInvestedBuyAndHoldStrategy",
 ]

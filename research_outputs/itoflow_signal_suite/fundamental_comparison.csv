@@ -1,0 +1,4 @@
+strategy,status,unavailable_reason
+AAPL.US:value_gate,unavailable,"Unavailable for held-out scoring: after point-in-time availability filtering, the valid PE cross-section was below Itoflow build_value_signal minimum of 20 symbols on required monthly decision dates; no current snapshot was backfilled."
+AAPL.US:quality_gate,unavailable,"Unavailable for held-out scoring: after point-in-time availability filtering, the valid PE cross-section was below Itoflow build_value_signal minimum of 20 symbols on required monthly decision dates; no current snapshot was backfilled."
+AAPL.US:value_quality_gate,unavailable,"Unavailable for held-out scoring: after point-in-time availability filtering, the valid PE cross-section was below Itoflow build_value_signal minimum of 20 symbols on required monthly decision dates; no current snapshot was backfilled."

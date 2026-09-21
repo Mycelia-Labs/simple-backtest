@@ -214,7 +214,81 @@ This remains a simulation/research example. It does not place orders or connect
 to a broker.
 
 
-### Creating a Custom Strategy
+## Signal-suite result from the held-out run
+
+The price-based run completed on AAPL.US and VOO.US for 2024-01-01 through
+2024-12-31 after 2021-01-01 warm-up. VOO buy-and-hold returned 26.4049% with
+1.9322 Sharpe, 9.1160% maximum drawdown, 2 trades, 99.61% average exposure,
+and 0.6156% average cash. The fixed-10-share AAPL RSI baseline returned 3.0467%
+with 0.8125 Sharpe, 2.6156% drawdown, 8 trades, 10.99% exposure, and 89.01%
+cash. The fixed-10-share VOO RSI baseline returned 5.5208% with 2.4620 Sharpe,
+0.7793% drawdown, 4 trades, 5.48% exposure, and 94.52% cash. These exposure
+figures are why the fully invested VOO benchmark is not a like-for-like capital
+allocation comparison.
+
+The new price variants are preserved in `price_comparison.csv`; the combined
+variant is not described as an improvement merely because it trades. The dated
+fundamental integration and both Itoflow fundamental builders are implemented
+and tested, but the held-out evaluation is explicitly unavailable: after
+`available_date` filtering, one required universe member failed the Itoflow
+fundamentals route and the valid cross-section fell below the library's minimum
+20 observations. No current screener snapshot was substituted.
+
+
+The branch also includes `scripts/run_itoflow_signal_suite.py`, a deterministic
+Python backtest that calls Itoflow's public functions directly—no strategy
+agent is invoked at historical steps. It keeps the original `rsi_baseline`
+unchanged and compares independently selectable variants:
+
+- `itoflow_rsi` — Itoflow `calculate_rsi`; kept separate from new signals.
+- `mean_reversion` — Itoflow `mean_reversion_signal(method="residual")` with a separately loaded `SPY.US` market proxy; it records a VOO fallback only if SPY is unavailable.
+- `supertrend` — Itoflow `calculate_supertrend()`.
+- `dip_score` — Itoflow `calculate_dip_score()`.
+- `vol_scaled` — Itoflow RSI direction plus separately tested `calculate_volatility_scaled_position_size()` sizing.
+- `combined` — a documented 2-of-4 vote across RSI, residual mean reversion, SuperTrend, and dip score.
+- `voo_buy_hold` — explicit fully invested VOO benchmark, not RSI-traded VOO.
+
+Run the full AAPL/VOO held-out suite:
+
+```bash
+PYTHONPATH=. python scripts/run_itoflow_signal_suite.py \\
+  --start 2021-01-01 --end 2025-01-01 \\
+  --holdout-start 2024-01-01 \\
+  --output-dir research_outputs/itoflow_signal_suite
+```
+
+The suite uses a 300-row backtest lookback, giving the 252-session dip-score
+warm-up and longer indicators enough history. Trades use the same $10,000
+capital, open execution, 0.1% commission, final liquidation, and 2024 holdout.
+It writes `price_comparison.csv` with return, Sharpe, maximum drawdown, trade
+count, gross turnover, average exposure, average cash, and deltas versus the
+AAPL RSI baseline and VOO buy-and-hold benchmark. It also writes
+`fundamental_comparison.csv`, dated fundamentals diagnostics, and
+`point_in_time_value_quality_scores.csv`.
+
+The fundamental variants are evaluated only for AAPL using this documented
+24-stock US universe: AAPL, MSFT, GOOGL, AMZN, META, NVDA, JPM, JNJ, XOM, PG,
+UNH, HD, CVX, COST, AVGO, BAC, WMT, PFE, KO, ORCL, CSCO, CRM, ADBE, and
+MRK (all `.US`). They call Itoflow's `load_fundamentals_history()` and use
+`available_date` strictly before monthly decision dates; derived PE, ROE,
+profit margin, ROA, and operating margin are then passed to Itoflow's
+`build_value_signal()` and `build_quality_signal()`. Today's screener snapshot
+is never backfilled into history, and VOO ETF fundamentals are not invented.
+If dated history or required price inputs fail, the fundamental rows are marked
+unavailable with the exact reason while the price-based suite still completes.
+
+The suite is independent of GDELT and the unavailable news feed. Itoflow must
+be installed and its provider route configured; no broker credentials are used.
+
+The focused tests cover direct Itoflow signal calls, warm-up, current-bar
+look-ahead timing, volatility sizing, value/quality cross-sectional ranking,
+and fully invested benchmark accounting:
+
+```bash
+PYTHONPATH=. pytest tests/test_rsi_news.py -q
+PYTHONPATH=. pytest -q
+```
+
 
 Implement your own strategy by inheriting from `Strategy` and defining the `predict()` method:
 
