@@ -6,6 +6,7 @@ from urllib.error import HTTPError
 
 import pandas as pd
 
+from simple_backtest import Backtest, BacktestConfig
 from simple_backtest.news import (
     GDELTNewsProvider,
     NewsArticle,
@@ -94,6 +95,61 @@ def test_news_gate_blocks_negative_rsi_entry():
     # made using the window ending on 2020-01-11; it is therefore usable.
     prediction = strategy.predict(data, [])
     assert prediction["signal"] == "hold"
+
+
+def test_backtest_uses_current_bar_timestamp_for_news_cutoff():
+    dates = pd.date_range("2020-01-01", periods=12, freq="D", tz="UTC")
+    prices = pd.DataFrame(
+        {
+            "Open": 100.0,
+            "High": 101.0,
+            "Low": 99.0,
+            "Close": 100.0,
+            "Volume": 1_000.0,
+        },
+        index=dates,
+    )
+    decision_date = dates[10]
+    features = pd.DataFrame(
+        {"news_signal": [-1.0, 1.0], "article_count": [1, 1]},
+        index=pd.DatetimeIndex(
+            [decision_date - pd.Timedelta(hours=12), decision_date], tz="UTC"
+        ),
+    )
+    strategy = NewsAwareRSIStrategy(
+        features,
+        period=3,
+        oversold=40,
+        overbought=60,
+        shares=1,
+        min_news_for_entry=-0.1,
+    )
+    observed_cutoffs = []
+    original = strategy._latest_news_signal
+
+    def capture(as_of):
+        observed_cutoffs.append(pd.Timestamp(as_of))
+        return original(as_of)
+
+    strategy._latest_news_signal = capture
+    config = BacktestConfig(
+        initial_capital=10_000,
+        lookback_period=5,
+        commission_type="percentage",
+        commission_value=0.001,
+        execution_price="open",
+        final_liquidation=True,
+        trading_start_date=dates[6].to_pydatetime(),
+        trading_end_date=dates[10].to_pydatetime(),
+        periods_per_year=252,
+        parallel_execution=False,
+    )
+    Backtest(prices, config).run([strategy])
+    assert decision_date in observed_cutoffs
+    # The prior-day noon article is available at the decision open; the article
+    # timestamped exactly at the current open is not.
+    assert original(decision_date) == -1.0
+    assert original(decision_date + pd.Timedelta(nanoseconds=1)) == 0.0
 
 
 def test_gdelt_provider_retries_rate_limit(monkeypatch):

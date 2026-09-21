@@ -88,10 +88,11 @@ class RSIStrategy(Strategy):
 class NewsAwareRSIStrategy(RSIStrategy):
     """RSI strategy with a strictly point-in-time news risk gate.
 
-    ``news_features`` must be indexed by UTC-normalized availability dates.
-    A row dated 2024-01-10 is only eligible for a trade on a later bar, because
-    the engine passes the strategy data window ending on the prior bar.  The
-    strategy never reads a future news row and treats missing news as neutral.
+    ``news_features`` must be indexed by UTC-normalized availability timestamps.
+    The engine supplies the current bar's timestamp through ``_portfolio_state``;
+    the strict ``<`` cutoff admits prior-day intraday articles but excludes
+    articles available at or after the current bar's open. Direct unit calls
+    without portfolio state fall back to the final supplied data timestamp.
     """
 
     def __init__(
@@ -151,7 +152,12 @@ class NewsAwareRSIStrategy(RSIStrategy):
     def predict(self, data: pd.DataFrame, trade_history: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Apply RSI logic, blocking negative-news entries and exiting shocks."""
         base_signal = super().predict(data, trade_history)
-        news_signal = self._latest_news_signal(pd.Timestamp(data.index[-1]))
+        decision_timestamp = None
+        if getattr(self, "_portfolio_state", None):
+            decision_timestamp = self._portfolio_state.get("timestamp")
+        if decision_timestamp is None:
+            decision_timestamp = data.index[-1]
+        news_signal = self._latest_news_signal(pd.Timestamp(decision_timestamp))
         if base_signal["signal"] == "buy" and news_signal < self.min_news_for_entry:
             return self.hold()
         if self.has_position() and news_signal <= self.news_exit_threshold:

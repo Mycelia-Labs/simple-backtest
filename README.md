@@ -175,8 +175,8 @@ articles cannot affect that morning's trade.
 
 The GDELT client now retries HTTP 429 responses sequentially, honors a numeric
 `Retry-After` header when supplied, and otherwise uses capped exponential
-backoff. It also caches the fetched article/signal files in the output
-directory so successful history can be reused. A persistent 429 or non-JSON
+backoff. It writes fetched article and signal files as output artifacts for
+inspection and later user-managed caching. A persistent 429 or non-JSON
 response still fails closed. `yfinance` can provide a current/recent `Ticker.news`
 feed, but it is not treated here as a complete historical point-in-time archive
 for a 2022–2024 backtest; use it only with an independently captured, timestamped
