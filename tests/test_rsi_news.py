@@ -17,6 +17,7 @@ from ito_quant.alpha import (
 from ito_quant.market_data.indicators import calculate_atr, calculate_supertrend
 
 from simple_backtest import Backtest, BacktestConfig
+from simple_backtest.strategy.base import Strategy
 from simple_backtest.fundamental_signals import _build_cross_section_scores, _latest_metric_as_of
 from simple_backtest.news import (
     GDELTNewsProvider,
@@ -57,6 +58,39 @@ def _ohlc(rows: int = 320) -> pd.DataFrame:
         index=dates,
     )
 
+
+def test_backtest_signal_excludes_current_bar_ohlc_for_open_execution():
+    class CaptureStrategy(Strategy):
+        def __init__(self):
+            super().__init__(name="capture_open")
+            self.windows = []
+
+        def predict(self, data, trade_history):
+            self.windows.append(data.copy())
+            return self.buy(1) if len(self.windows) == 1 else self.hold()
+
+    dates = pd.date_range("2020-01-01", periods=8, freq="D", tz="UTC")
+    base = pd.DataFrame(
+        {"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.0, "Volume": 1000.0},
+        index=dates,
+    )
+    changed = base.copy()
+    changed.loc[dates[5], ["High", "Low", "Close"]] = [1000.0, 1.0, 777.0]
+    config = BacktestConfig(
+        initial_capital=10_000, lookback_period=5,
+        commission_type="percentage", commission_value=0.001,
+        execution_price="open", final_liquidation=True,
+        trading_start_date=dates[5].to_pydatetime(),
+        trading_end_date=dates[7].to_pydatetime(),
+        periods_per_year=252, parallel_execution=False,
+    )
+    first, second = CaptureStrategy(), CaptureStrategy()
+    first_result = Backtest(base, config).run([first]).get_strategy("capture_open")
+    second_result = Backtest(changed, config).run([second]).get_strategy("capture_open")
+    assert first_result.trade_history[0]["signal"] == second_result.trade_history[0]["signal"] == "buy"
+    assert first.windows[0].index[-1] == dates[4]
+    assert second.windows[0].index[-1] == dates[4]
+    pd.testing.assert_frame_equal(first.windows[0], second.windows[0])
 
 def test_fundamental_runner_emits_independent_gate_statuses():
     from scripts.run_itoflow_signal_suite import run_fundamental_variants
