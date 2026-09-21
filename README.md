@@ -214,7 +214,39 @@ This remains a simulation/research example. It does not place orders or connect
 to a broker.
 
 
-## Signal-suite result from the held-out run
+## Latest Five-Year SPY Run
+
+Run the unchanged fixed-10-share RSI baseline and every price-based Itoflow
+variant on SPY, using VOO as the separately loaded market proxy:
+
+```bash
+PYTHONPATH=. python scripts/run_itoflow_signal_suite.py \\
+  --target-symbol SPY.US --market-proxy VOO.US --last-five-years \\
+  --output-dir research_outputs/spy_itoflow_signal_suite
+```
+
+The latest run discovered SPY's most recent close as **2026-09-18**, evaluated
+**2021-09-20 through 2026-09-18**, and reserved **2020-07-13 through 2021-09-17**
+for the 300-row warm-up. Every row used $10,000 initial capital, open execution,
+0.1% commission, final liquidation, and identical dates.
+
+| SPY variant | Return | Sharpe | Max drawdown | Trades | Avg exposure | Avg cash |
+|---|---:|---:|---:|---:|---:|---:|
+| Original RSI baseline | 14.2876% | 0.4881 | 9.2948% | 26 | 13.54% | 86.46% |
+| Itoflow RSI | 16.7311% | 0.4925 | 9.5023% | 30 | 21.83% | 78.17% |
+| Residual mean reversion | 11.4887% | 0.4091 | 11.0477% | 96 | 24.54% | 75.46% |
+| SuperTrend | 19.3862% | 0.8572 | 4.3926% | 40 | 27.05% | 72.95% |
+| Dip score | 5.1318% | 0.4571 | 2.2414% | 2 | 0.44% | 99.56% |
+| Volatility-scaled | 2.2245% | 0.3460 | 2.4115% | 30 | 3.83% | 96.17% |
+| Combined | 13.2458% | 0.6254 | 7.6630% | 114 | 9.78% | 90.22% |
+| SPY buy-and-hold | 86.8023% | 0.8126 | 26.2868% | 2 | 99.94% | 0.38% |
+
+Against the unchanged RSI baseline, Itoflow RSI added 2.4435 percentage points
+of return, SuperTrend added 5.0986 points, and the combined rule reduced return
+by 1.0418 points. All active strategies lagged fully invested SPY buy-and-hold
+on raw return, partly because the fixed-share variants held substantial cash.
+ETF value/quality fundamentals were explicitly skipped rather than invented.
+
 
 The price-based run completed on AAPL.US and VOO.US for 2024-01-01 through
 2024-12-31 after 2021-01-01 warm-up. VOO buy-and-hold returned 26.4049% with

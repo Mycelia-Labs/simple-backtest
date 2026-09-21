@@ -1,0 +1,4 @@
+strategy,status,unavailable_reason
+SPY.US:value_gate,unavailable,Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals.
+SPY.US:quality_gate,unavailable,Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals.
+SPY.US:value_quality_gate,unavailable,Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals.

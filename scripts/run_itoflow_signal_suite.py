@@ -11,6 +11,10 @@ The fundamental variants use the documented stock universe in
 ``load_fundamentals_history`` path. ETF fundamentals are never invented for
 VOO; value/quality variants are evaluated only on AAPL as a member of the stock
 universe.
+
+Use ``--target-symbol SPY.US --market-proxy VOO.US --last-five-years`` to
+discover the latest provider close, reserve 300 prior trading rows as warm-up,
+and skip stock-only fundamentals for the ETF target.
 """
 
 from __future__ import annotations
@@ -215,134 +219,137 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end", default="2025-01-01")
     parser.add_argument("--holdout-start", default="2024-01-01")
     parser.add_argument("--output-dir", type=Path, default=Path("research_outputs/itoflow_signal_suite"))
+    parser.add_argument("--target-symbol", default=None, help="Run one target, e.g. SPY.US, instead of default AAPL/VOO pair.")
+    parser.add_argument("--market-proxy", default=None, help="Separately loaded broad-market proxy for residual mean reversion.")
+    parser.add_argument("--last-five-years", action="store_true", help="Discover latest target close and derive a five-year evaluation interval plus 300-row warm-up.")
     return parser
 
 
 def main() -> int:
     args = _build_parser().parse_args()
+    if args.last_five_years:
+        discovery_symbol = args.target_symbol or "SPY.US"
+        discovery = load_ohlcv(discovery_symbol, "2000-01-01", None)
+        latest = pd.Timestamp(discovery.index[-1])
+        evaluation_start_target = latest - pd.DateOffset(years=5)
+        evaluation_position = discovery.index.searchsorted(evaluation_start_target, side="left")
+        warmup_position = max(0, evaluation_position - 300)
+        args.start = pd.Timestamp(discovery.index[warmup_position]).date().isoformat()
+        args.holdout_start = pd.Timestamp(discovery.index[evaluation_position]).date().isoformat()
+        args.end = (latest + pd.Timedelta(days=1)).date().isoformat()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    raw: dict[str, Any] = {"settings": {"start": args.start, "end": args.end, "holdout_start": args.holdout_start}}
+    target_symbols = [args.target_symbol] if args.target_symbol else list(PRICE_SYMBOLS)
+    if any(not symbol or "." not in symbol for symbol in target_symbols):
+        raise ValueError("target symbols must use SYMBOL.EXCHANGE format")
+    raw: dict[str, Any] = {
+        "settings": {
+            "start": args.start,
+            "end": args.end,
+            "holdout_start": args.holdout_start,
+            "target_symbols": target_symbols,
+            "latest_available_close": None,
+            "date_policy": "latest provider close minus five calendar years; 300 prior trading rows reserved as warm-up",
+        }
+    }
 
-    data = {symbol: load_ohlcv(symbol, args.start, args.end) for symbol in PRICE_SYMBOLS}
-    market_source = "SPY.US"
-    try:
-        market_prices = load_ohlcv("SPY.US", args.start, args.end)["Close"]
-    except Exception as exc:
-        # VOO is itself a broad-market ETF and is already loaded for the
-        # explicit benchmark; record the fallback rather than hiding a failed
-        # separately requested SPY route.
-        market_source = f"VOO.US fallback after SPY.US unavailable: {type(exc).__name__}: {exc}"
-        market_prices = data["VOO.US"]["Close"]
+    data = {symbol: load_ohlcv(symbol, args.start, args.end) for symbol in target_symbols}
+    market_symbol = args.market_proxy or ("VOO.US" if target_symbols == ["SPY.US"] else "SPY.US")
+    market_prices = load_ohlcv(market_symbol, args.start, args.end)["Close"]
+    raw["market_proxy"] = market_symbol
+    raw["settings"]["latest_available_close"] = {
+        symbol: pd.Timestamp(frame.index[-1]).date().isoformat() for symbol, frame in data.items()
+    }
+    raw["settings"]["warmup_start"] = pd.Timestamp(data[target_symbols[0]].index[0]).date().isoformat()
+    raw["settings"]["evaluation_start"] = args.holdout_start
+    raw["settings"]["evaluation_end"] = pd.Timestamp(data[target_symbols[0]].index[-1]).date().isoformat()
     price_rows: list[dict[str, Any]] = []
-    for symbol in PRICE_SYMBOLS:
+    for symbol in target_symbols:
         price_rows.extend(run_price_variants(symbol, data[symbol], market_prices, args.holdout_start))
 
-    # Explicit VOO buy-and-hold benchmark, using the same adjusted provider
-    # close treatment and cost configuration as the strategies.
-    benchmark = FullyInvestedBuyAndHoldStrategy(name="voo_buy_hold")
-    benchmark_row = run_strategy(benchmark.get_name(), benchmark, data["VOO.US"], args.holdout_start)
-    price_rows.append(benchmark_row)
+    benchmark_names = []
+    for symbol in target_symbols:
+        benchmark_name = f"{symbol}:buy_hold"
+        benchmark = FullyInvestedBuyAndHoldStrategy(name=benchmark_name)
+        price_rows.append(run_strategy(benchmark.get_name(), benchmark, data[symbol], args.holdout_start))
+        benchmark_names.append(benchmark_name)
 
     for symbol, frame in data.items():
         frame.to_csv(args.output_dir / f"{symbol.replace('.', '_')}_ohlcv.csv")
-    price_comparison = add_deltas(price_rows, benchmark_name="voo_buy_hold")
+    benchmark_name = benchmark_names[0] if len(benchmark_names) == 1 else None
+    price_comparison = add_deltas(price_rows, benchmark_name=benchmark_name)
     price_comparison.to_csv(args.output_dir / "price_comparison.csv", index=False)
 
     fundamental_rows: list[dict[str, Any]] = []
-    decision_dates = pd.DatetimeIndex(
-        pd.Series(data["AAPL.US"].index).groupby(data["AAPL.US"].index.to_period("M")).min().values
-    ).tz_localize("UTC")
-    try:
-        stock_price_frame = get_daily_prices(
-            list(DEFAULT_STOCK_UNIVERSE),
-            start_date=args.start,
-            end_date=args.end,
-            fill_method=None,
-            allow_partial=True,
-        )
-        stock_prices: dict[str, pd.Series] = {}
-        missing_price_inputs: dict[str, str] = {}
-        for symbol in DEFAULT_STOCK_UNIVERSE:
-            if symbol not in stock_price_frame.columns:
-                missing_price_inputs[symbol] = "Itoflow get_daily_prices returned no column"
-            else:
-                series = pd.to_numeric(stock_price_frame[symbol], errors="coerce").dropna()
-                if series.empty:
-                    missing_price_inputs[symbol] = "Itoflow get_daily_prices returned no valid observations"
-                else:
-                    stock_prices[symbol] = series
-    except Exception as exc:
-        stock_prices = {}
-        missing_price_inputs = {
-            symbol: f"Itoflow get_daily_prices failed for the stock universe: {type(exc).__name__}: {exc}"
-            for symbol in DEFAULT_STOCK_UNIVERSE
-        }
-    if missing_price_inputs:
-        fundamental_result = None
+    if target_symbols != ["AAPL.US", "VOO.US"]:
         fundamental_status = "unavailable"
-        fundamental_reason = f"Required point-in-time price inputs unavailable: {missing_price_inputs}"
+        fundamental_reason = "Skipped: this request targets ETF/price symbols; stock-only dated value and quality signals are not applied to ETF fundamentals."
         for variant in FUNDAMENTAL_VARIANTS:
-            fundamental_rows.append(
-                {
-                    "strategy": f"AAPL.US:{variant}",
-                    "status": "unavailable",
-                    "unavailable_reason": fundamental_reason,
-                }
-            )
-        pd.DataFrame(
-            [{"symbol": symbol, "reason": reason} for symbol, reason in missing_price_inputs.items()]
-        ).to_csv(args.output_dir / "fundamental_missing_inputs.csv", index=False)
+            fundamental_rows.append({
+                "strategy": f"{target_symbols[0]}:{variant}",
+                "status": "unavailable",
+                "unavailable_reason": fundamental_reason,
+            })
     else:
+        decision_dates = pd.DatetimeIndex(
+            pd.Series(data["AAPL.US"].index).groupby(data["AAPL.US"].index.to_period("M")).min().values
+        ).tz_localize("UTC")
         try:
-            fundamental_result = build_point_in_time_fundamental_signals(
-                DEFAULT_STOCK_UNIVERSE,
-                stock_prices,
-                decision_dates,
-                exchange="US",
+            stock_price_frame = get_daily_prices(
+                list(DEFAULT_STOCK_UNIVERSE),
+                start_date=args.start,
+                end_date=args.end,
+                fill_method=None,
+                allow_partial=True,
             )
-            fundamental_status = fundamental_result.status
-            fundamental_reason = fundamental_result.unavailable_reason
-            fundamental_result.panel.to_csv(args.output_dir / "fundamentals_history_panel.csv", index=False)
-            fundamental_result.diagnostics.to_csv(args.output_dir / "fundamentals_history_diagnostics.csv", index=False)
-            score_frames = []
-            for symbol, scores in fundamental_result.scores_by_symbol.items():
-                if not scores.empty:
-                    score_out = scores.copy()
-                    score_out.insert(0, "symbol", symbol)
-                    score_frames.append(score_out.reset_index())
-            if score_frames:
-                pd.concat(score_frames, ignore_index=True).to_csv(args.output_dir / "point_in_time_value_quality_scores.csv", index=False)
-            fundamental_rows.extend(
-                run_fundamental_variants(
-                    "AAPL.US",
-                    data["AAPL.US"],
-                    market_prices,
-                    fundamental_result.scores_by_symbol.get("AAPL.US"),
-                    args.holdout_start,
-                )
-            )
+            stock_prices: dict[str, pd.Series] = {}
+            missing_price_inputs: dict[str, str] = {}
+            for symbol in DEFAULT_STOCK_UNIVERSE:
+                if symbol not in stock_price_frame.columns:
+                    missing_price_inputs[symbol] = "Itoflow get_daily_prices returned no column"
+                else:
+                    series = pd.to_numeric(stock_price_frame[symbol], errors="coerce").dropna()
+                    if series.empty:
+                        missing_price_inputs[symbol] = "Itoflow get_daily_prices returned no valid observations"
+                    else:
+                        stock_prices[symbol] = series
         except Exception as exc:
-            fundamental_result = None
+            stock_prices = {}
+            missing_price_inputs = {
+                symbol: f"Itoflow get_daily_prices failed for the stock universe: {type(exc).__name__}: {exc}"
+                for symbol in DEFAULT_STOCK_UNIVERSE
+            }
+        if missing_price_inputs:
             fundamental_status = "unavailable"
-            fundamental_reason = f"Itoflow dated fundamentals failed: {type(exc).__name__}: {exc}"
+            fundamental_reason = f"Required point-in-time price inputs unavailable: {missing_price_inputs}"
             for variant in FUNDAMENTAL_VARIANTS:
-                fundamental_rows.append(
-                    {
-                        "strategy": f"AAPL.US:{variant}",
-                        "status": "unavailable",
-                        "unavailable_reason": fundamental_reason,
-                    }
+                fundamental_rows.append({"strategy": f"AAPL.US:{variant}", "status": "unavailable", "unavailable_reason": fundamental_reason})
+        else:
+            try:
+                fundamental_result = build_point_in_time_fundamental_signals(
+                    DEFAULT_STOCK_UNIVERSE, stock_prices, decision_dates, exchange="US"
                 )
+                fundamental_status = fundamental_result.status
+                fundamental_reason = fundamental_result.unavailable_reason
+                fundamental_result.panel.to_csv(args.output_dir / "fundamentals_history_panel.csv", index=False)
+                fundamental_result.diagnostics.to_csv(args.output_dir / "fundamentals_history_diagnostics.csv", index=False)
+                score_frames = []
+                for symbol, scores in fundamental_result.scores_by_symbol.items():
+                    if not scores.empty:
+                        score_out = scores.copy()
+                        score_out.insert(0, "symbol", symbol)
+                        score_frames.append(score_out.reset_index())
+                if score_frames:
+                    pd.concat(score_frames, ignore_index=True).to_csv(args.output_dir / "point_in_time_value_quality_scores.csv", index=False)
+                fundamental_rows.extend(run_fundamental_variants(
+                    "AAPL.US", data["AAPL.US"], market_prices,
+                    fundamental_result.scores_by_symbol.get("AAPL.US"), args.holdout_start
+                ))
+            except Exception as exc:
+                fundamental_status = "unavailable"
+                fundamental_reason = f"Itoflow dated fundamentals failed: {type(exc).__name__}: {exc}"
+                for variant in FUNDAMENTAL_VARIANTS:
+                    fundamental_rows.append({"strategy": f"AAPL.US:{variant}", "status": "unavailable", "unavailable_reason": fundamental_reason})
     fundamental_comparison = add_deltas(fundamental_rows, benchmark_name=None)
-    aapl_rsi = price_comparison.loc[price_comparison["strategy"] == "AAPL.US:rsi_baseline"].iloc[0]
-    voo_benchmark = price_comparison.loc[price_comparison["strategy"] == "voo_buy_hold"].iloc[0]
-    if not fundamental_comparison.empty:
-        fundamental_comparison["return_delta_vs_aapl_rsi_pct_points"] = fundamental_comparison["total_return"] - aapl_rsi["total_return"]
-        fundamental_comparison["sharpe_delta_vs_aapl_rsi"] = fundamental_comparison["sharpe_ratio"] - aapl_rsi["sharpe_ratio"]
-        fundamental_comparison["drawdown_delta_vs_aapl_rsi_pct_points"] = fundamental_comparison["max_drawdown"] - aapl_rsi["max_drawdown"]
-        fundamental_comparison["return_delta_vs_voo_benchmark_pct_points"] = fundamental_comparison["total_return"] - voo_benchmark["total_return"]
-        fundamental_comparison["sharpe_delta_vs_voo_benchmark"] = fundamental_comparison["sharpe_ratio"] - voo_benchmark["sharpe_ratio"]
-        fundamental_comparison["drawdown_delta_vs_voo_benchmark_pct_points"] = fundamental_comparison["max_drawdown"] - voo_benchmark["max_drawdown"]
     fundamental_comparison.to_csv(args.output_dir / "fundamental_comparison.csv", index=False)
 
     raw["fundamentals"] = {
@@ -351,9 +358,8 @@ def main() -> int:
         "input_semantics": "Itoflow load_fundamentals_history available_date with publication_lag_days=1; derived PE/ROE/margins; no current screener snapshot backfill",
         "unavailable_reason": fundamental_reason,
     }
-    raw["benchmark"] = "voo_buy_hold uses Itoflow provider Close (adjusted series; raw_close retained in OHLCV artifacts) with the same commission and date window."
-    raw["fundamental_decision_dates"] = "First available trading date of each calendar month; scores use only fundamentals with available_date strictly before each date."
-    raw["market_proxy"] = market_source
+    raw["benchmark"] = f"{benchmark_names[0]} uses Itoflow provider Close (adjusted series; raw_close retained in OHLCV artifacts) with the same commission and date window."
+    raw["fundamental_decision_dates"] = "Not used for ETF-only run; stock-only variants are explicitly unavailable." if target_symbols != ["AAPL.US", "VOO.US"] else "First available trading date of each calendar month; scores use only fundamentals with available_date strictly before each date."
     raw["news"] = "Not used; this suite is independent of the unavailable GDELT feed."
     with (args.output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(raw, handle, indent=2, default=str)
