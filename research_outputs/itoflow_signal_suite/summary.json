@@ -5,7 +5,7 @@
     "holdout_start": "2024-01-01"
   },
   "fundamentals": {
-    "status": "unavailable",
+    "status": "available",
     "universe": [
       "AAPL.US",
       "MSFT.US",
@@ -33,7 +33,7 @@
       "MRK.US"
     ],
     "input_semantics": "Itoflow load_fundamentals_history available_date with publication_lag_days=1; derived PE/ROE/margins; no current screener snapshot backfill",
-    "unavailable_reason": "Unavailable for held-out scoring: after point-in-time availability filtering, the valid PE cross-section was below Itoflow build_value_signal minimum of 20 symbols on required monthly decision dates; no current snapshot was backfilled."
+    "unavailable_reason": null
   },
   "benchmark": "voo_buy_hold uses Itoflow provider Close (adjusted series; raw_close retained in OHLCV artifacts) with the same commission and date window.",
   "fundamental_decision_dates": "First available trading date of each calendar month; scores use only fundamentals with available_date strictly before each date.",
