@@ -1,0 +1,20 @@
+{
+  "holdout_start": "2024-01-01T00:00:00+00:00",
+  "holdout_end": "2024-12-31T00:00:00+00:00",
+  "commission_rate": 0.001,
+  "execution_price": "open",
+  "lookback_period": 50,
+  "news_availability_field": "GDELT seendate",
+  "baseline_vs_itoflow_return_delta_pct_points": 2.612886608629597,
+  "baseline_vs_itoflow_sharpe_delta": 1.2041920416112024,
+  "baseline_vs_itoflow_drawdown_delta_pct_points": -0.6963013800790347,
+  "baseline_vs_itoflow_trade_count_delta": 2,
+  "comparison_status": "news_unavailable",
+  "news_status": {
+    "source": "GDELT DOC 2.0",
+    "availability_timestamp": "seendate",
+    "query": "AAPL OR Apple",
+    "status": "unavailable",
+    "reason": "HTTP Error 429: Too Many Requests"
+  }
+}

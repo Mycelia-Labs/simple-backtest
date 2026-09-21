@@ -21,6 +21,9 @@ from typing import Any
 
 import pandas as pd
 
+from ito_quant.alpha import calculate_ic
+from ito_quant.market_data import get_daily_ohlcv
+
 from simple_backtest import Backtest, BacktestConfig
 from simple_backtest.news import fetch_historical_news, build_daily_news_signal
 from simple_backtest.strategy import NewsAwareRSIStrategy, RSIStrategy
@@ -28,12 +31,6 @@ from simple_backtest.strategy import NewsAwareRSIStrategy, RSIStrategy
 
 def load_prices(symbol: str, start: str, end: str) -> pd.DataFrame:
     """Load and normalize Itoflow OHLCV data for the simple-backtest engine."""
-    try:
-        from ito_quant.market_data import get_daily_ohlcv
-    except ImportError as exc:  # pragma: no cover - depends on runtime installation.
-        raise RuntimeError(
-            "This research runner requires the Itoflow quant library for provider-routed prices."
-        ) from exc
     data = get_daily_ohlcv(
         symbol,
         start_date=start,
@@ -82,24 +79,37 @@ def run_comparison(
         risk_free_rate=0.0,
     )
     baseline = RSIStrategy(period=14, oversold=30, overbought=70, shares=10, name="rsi_baseline")
-    news_strategy = NewsAwareRSIStrategy(
-        news_features=news_features,
+    itoflow_strategy = RSIStrategy(
         period=14,
         oversold=30,
         overbought=70,
         shares=10,
-        min_news_for_entry=-0.25,
-        news_exit_threshold=-0.60,
-        max_news_age_days=3,
-        name="rsi_news",
+        name="rsi_itoflow",
+        use_itoflow_rsi=True,
     )
-    results = Backtest(prices, config).run([baseline, news_strategy])
+    strategies = [baseline, itoflow_strategy]
+    if not news_features.empty:
+        strategies.append(
+            NewsAwareRSIStrategy(
+                news_features=news_features,
+                period=14,
+                oversold=30,
+                overbought=70,
+                shares=10,
+                min_news_for_entry=-0.25,
+                news_exit_threshold=-0.60,
+                max_news_age_days=3,
+                name="rsi_itoflow_news",
+                use_itoflow_rsi=True,
+            )
+        )
+    results = Backtest(prices, config).run(strategies)
     rows = []
-    for name in [baseline.get_name(), news_strategy.get_name()]:
-        metrics = results.get_strategy(name).metrics
+    for strategy in strategies:
+        metrics = results.get_strategy(strategy.get_name()).metrics
         rows.append(
             {
-                "strategy": name,
+                "strategy": strategy.get_name(),
                 "period": f"{holdout.date()} to {prices.index[-1].date()}",
                 "total_return_pct": metrics["total_return"],
                 "sharpe_ratio": metrics["sharpe_ratio"],
@@ -110,7 +120,7 @@ def run_comparison(
         )
     comparison = pd.DataFrame(rows)
     baseline_row = comparison.loc[comparison["strategy"] == "rsi_baseline"].iloc[0]
-    news_row = comparison.loc[comparison["strategy"] == "rsi_news"].iloc[0]
+    itoflow_row = comparison.loc[comparison["strategy"] == "rsi_itoflow"].iloc[0]
     summary = {
         "holdout_start": holdout.isoformat(),
         "holdout_end": prices.index[-1].isoformat(),
@@ -118,11 +128,37 @@ def run_comparison(
         "execution_price": "open",
         "lookback_period": 50,
         "news_availability_field": "GDELT seendate",
-        "return_delta_pct_points": float(news_row["total_return_pct"] - baseline_row["total_return_pct"]),
-        "sharpe_delta": float(news_row["sharpe_ratio"] - baseline_row["sharpe_ratio"]),
-        "drawdown_delta_pct_points": float(news_row["max_drawdown_pct"] - baseline_row["max_drawdown_pct"]),
-        "trade_count_delta": int(news_row["trade_count"] - baseline_row["trade_count"]),
+        "baseline_vs_itoflow_return_delta_pct_points": float(
+            itoflow_row["total_return_pct"] - baseline_row["total_return_pct"]
+        ),
+        "baseline_vs_itoflow_sharpe_delta": float(
+            itoflow_row["sharpe_ratio"] - baseline_row["sharpe_ratio"]
+        ),
+        "baseline_vs_itoflow_drawdown_delta_pct_points": float(
+            itoflow_row["max_drawdown_pct"] - baseline_row["max_drawdown_pct"]
+        ),
+        "baseline_vs_itoflow_trade_count_delta": int(
+            itoflow_row["trade_count"] - baseline_row["trade_count"]
+        ),
     }
+    if "rsi_itoflow_news" in comparison["strategy"].values:
+        news_row = comparison.loc[comparison["strategy"] == "rsi_itoflow_news"].iloc[0]
+        summary.update(
+            {
+                "itoflow_vs_news_return_delta_pct_points": float(
+                    news_row["total_return_pct"] - itoflow_row["total_return_pct"]
+                ),
+                "itoflow_vs_news_sharpe_delta": float(
+                    news_row["sharpe_ratio"] - itoflow_row["sharpe_ratio"]
+                ),
+                "itoflow_vs_news_drawdown_delta_pct_points": float(
+                    news_row["max_drawdown_pct"] - itoflow_row["max_drawdown_pct"]
+                ),
+                "itoflow_vs_news_trade_count_delta": int(
+                    news_row["trade_count"] - itoflow_row["trade_count"]
+                ),
+            }
+        )
     return comparison, summary
 
 
@@ -183,52 +219,23 @@ def main() -> int:
         comparison.to_csv(args.output_dir / "comparison.csv", index=False)
         summary["news_status"] = news_status
     else:
-        # The baseline remains a valid, reproducible result; do not fabricate a
-        # news result by substituting an empty signal for missing historical data.
-        baseline = RSIStrategy(period=14, oversold=30, overbought=70, shares=10, name="rsi_baseline")
-        holdout = pd.Timestamp(args.holdout_start, tz="UTC")
-        config = BacktestConfig(
-            initial_capital=10_000,
-            lookback_period=50,
-            commission_type="percentage",
-            commission_value=0.001,
-            execution_price="open",
-            final_liquidation=True,
-            trading_start_date=holdout.to_pydatetime(),
-            trading_end_date=prices.index[-1].to_pydatetime(),
-            periods_per_year=252,
-            parallel_execution=False,
-        )
-        result = Backtest(prices, config).run([baseline]).get_strategy("rsi_baseline")
-        comparison = pd.DataFrame(
-            [{
-                "strategy": "rsi_baseline",
-                "period": f"{holdout.date()} to {prices.index[-1].date()}",
-                "total_return_pct": result.metrics["total_return"],
-                "sharpe_ratio": result.metrics["sharpe_ratio"],
-                "max_drawdown_pct": result.metrics["max_drawdown"],
-                "trade_count": int(result.metrics["total_trades"]),
-                "final_value": result.metrics["final_value"],
-            }]
-        )
+        # Run the original RSI and Itoflow RSI even when historical news is
+        # unavailable. Do not invent a news-aware result.
+        comparison, summary = run_comparison(prices, news_features, args.holdout_start)
         comparison.to_csv(args.output_dir / "comparison.csv", index=False)
-        summary = {"comparison_status": "news_unavailable", "news_status": news_status}
+        summary["comparison_status"] = "news_unavailable"
+        summary["news_status"] = news_status
 
-    # Itoflow's IC helper is a diagnostic, not a tuning step.  It is computed
+    # Itoflow's IC helper is a diagnostic, not a tuning step. It is computed
     # only when news is present and uses prior-day availability versus current-day
     # close-to-close returns to preserve the information boundary.
     if news_status["status"] == "available":
-        try:
-            from ito_quant.alpha import calculate_ic
-
-            signal = news_features["news_signal"].resample("1D").mean()
-            signal = signal.reindex(prices.index.normalize()).fillna(0.0)
-            forward_returns = prices["Close"].pct_change()
-            ic = calculate_ic(signal.shift(1), forward_returns, method="spearman")
-            summary["news_ic_prior_day_vs_return"] = float(ic.ic)
-            summary["news_ic_observations"] = int(ic.n_observations)
-        except Exception as exc:
-            summary["news_ic_status"] = f"unavailable: {exc}"
+        signal = news_features["news_signal"].resample("1D").mean()
+        signal = signal.reindex(prices.index.normalize()).fillna(0.0)
+        forward_returns = prices["Close"].pct_change()
+        ic = calculate_ic(signal.shift(1), forward_returns, method="spearman")
+        summary["news_ic_prior_day_vs_return"] = float(ic.ic)
+        summary["news_ic_observations"] = int(ic.n_observations)
     with (args.output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2, default=str)
     print(comparison.to_string(index=False))

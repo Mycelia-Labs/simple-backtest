@@ -156,11 +156,11 @@ Win Rate: 100.00%
 The repository now includes a reusable `RSIStrategy` and
 `NewsAwareRSIStrategy`. The latter keeps the original RSI entry/exit rules but
 adds a conservative, point-in-time news gate: negative news can block an
-oversold entry or force an exit. The strategy module can delegate RSI
-calculations to Itoflow's public helper, and the runner loads OHLCV data through
-Itoflow's provider-routed `get_daily_ohlcv` API. The comparison keeps the
-original notebook's rolling RSI backend for both legs so the news gate is the
-only strategy difference.
+oversold entry or force an exit. Itoflow's RSI helper is imported directly and
+is required by this research module; the runner loads OHLCV through Itoflow's
+provider-routed `get_daily_ohlcv` API. The comparison runs the original local
+RSI baseline and an explicit `rsi_itoflow` leg under identical conditions, then
+adds `rsi_itoflow_news` only when historical news is available.
 
 Historical news is intentionally sourced separately from market data. The
 example uses GDELT DOC 2.0 article-list results and treats GDELT's `seendate` as
@@ -183,13 +183,14 @@ python scripts/run_rsi_news_comparison.py \\
 ```
 
 The runner uses identical dates, initial capital, open execution, 0.1%
-commission, RSI parameters, and final liquidation for both strategies. It
-writes `comparison.csv` with total return, annualized Sharpe ratio, maximum
+commission, RSI parameters, and final liquidation for all available strategies.
+It writes `comparison.csv` with total return, annualized Sharpe ratio, maximum
 drawdown, and trade count, plus `summary.json`, the news article cache, and the
-daily news signal. If historical news is unavailable, it still writes the
-reproducible RSI baseline and marks the news comparison as unavailable rather
-than substituting an empty or fabricated signal. The default news thresholds
-are fixed before the held-out run; they are not tuned on the holdout period.
+daily news signal. If historical news is unavailable, it still runs and
+reports both the original RSI baseline and `rsi_itoflow`; it marks only the
+news-aware leg as unavailable rather than substituting an empty or fabricated
+news signal. The default news thresholds are fixed before the held-out run;
+they are not tuned on the holdout period.
 
 The package tests use deterministic synthetic inputs and do not call external
 services:

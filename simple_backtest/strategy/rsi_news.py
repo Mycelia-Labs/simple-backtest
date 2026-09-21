@@ -1,10 +1,9 @@
 """RSI strategies with an optional, point-in-time news gate.
 
 The original notebook's rolling-average RSI is preserved as the default so
-baseline results remain reproducible.  The strategy can delegate RSI to
-Itoflow's public quant helper with ``use_itoflow_rsi=True``; the comparison
-runner uses the same original RSI backend for both strategies so only the news
-gate differs.
+baseline results remain reproducible.  Itoflow's RSI helper is a required,
+direct dependency for the optional Itoflow backend; the comparison runner uses
+that backend explicitly for the modified leg.
 """
 
 from __future__ import annotations
@@ -15,23 +14,8 @@ import pandas as pd
 
 from simple_backtest.strategy.base import Strategy
 
-try:  # Optional at package import time; Itoflow is available in the research runtime.
-    from ito_quant.market_data.indicators import calculate_rsi as _itoflow_calculate_rsi
-except ImportError:  # pragma: no cover - exercised only in environments without Itoflow.
-    _itoflow_calculate_rsi = None
+from ito_quant.market_data.indicators import calculate_rsi as _itoflow_calculate_rsi
 
-
-def _fallback_rsi(prices: pd.Series, period: int) -> pd.Series:
-    """Calculate Wilder-style RSI for environments without Itoflow installed."""
-    deltas = prices.diff()
-    gains = deltas.clip(lower=0.0)
-    losses = -deltas.clip(upper=0.0)
-    average_gain = gains.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    average_loss = losses.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    relative_strength = average_gain / average_loss.replace(0.0, pd.NA)
-    result = 100 - (100 / (1 + relative_strength))
-    result = result.mask((average_loss == 0) & (average_gain > 0), 100.0)
-    return result.astype(float)
 
 
 def _legacy_rsi(prices: pd.Series, period: int) -> pd.Series:
@@ -49,12 +33,10 @@ def _legacy_rsi(prices: pd.Series, period: int) -> pd.Series:
 
 
 def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
-    """Use Itoflow's tested RSI helper, with a portable fallback."""
+    """Call Itoflow's required RSI helper directly."""
     if period < 2:
         raise ValueError("period must be at least 2")
-    if _itoflow_calculate_rsi is not None:
-        return _itoflow_calculate_rsi(prices, period=period)
-    return _fallback_rsi(prices, period)
+    return _itoflow_calculate_rsi(prices, period=period)
 
 
 class RSIStrategy(Strategy):
