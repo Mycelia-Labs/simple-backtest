@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import sqrt
 from typing import Iterable
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -34,8 +35,19 @@ class NewsArticle:
 class GDELTNewsProvider:
     """Small dependency-free client for GDELT DOC article-list queries."""
 
-    def __init__(self, base_url: str = "http://api.gdeltproject.org/api/v2/doc/doc") -> None:
+    def __init__(
+        self,
+        base_url: str = "http://api.gdeltproject.org/api/v2/doc/doc",
+        max_retries: int = 4,
+        backoff_seconds: float = 2.0,
+    ) -> None:
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+        if backoff_seconds <= 0:
+            raise ValueError("backoff_seconds must be positive")
         self.base_url = base_url
+        self.max_retries = max_retries
+        self.backoff_seconds = backoff_seconds
 
     def fetch(
         self,
@@ -67,8 +79,24 @@ class GDELTNewsProvider:
             f"{self.base_url}?{urlencode(params)}",
             headers={"User-Agent": "simple-backtest-historical-news/1.0"},
         )
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed provider URL.
-            raw_payload = response.read().decode("utf-8")
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed provider URL.
+                    raw_payload = response.read().decode("utf-8")
+                break
+            except HTTPError as exc:
+                last_error = exc
+                if exc.code != 429 or attempt >= self.max_retries:
+                    raise
+                retry_after = exc.headers.get("Retry-After")
+                try:
+                    wait_seconds = float(retry_after) if retry_after else self.backoff_seconds * (2**attempt)
+                except ValueError:
+                    wait_seconds = self.backoff_seconds * (2**attempt)
+                time.sleep(min(max(wait_seconds, self.backoff_seconds), 60.0))
+        else:  # pragma: no cover - loop either breaks or raises above.
+            raise RuntimeError("GDELT request failed after retries") from last_error
         try:
             payload = json.loads(raw_payload)
         except json.JSONDecodeError as exc:

@@ -1,8 +1,17 @@
 """Tests for the RSI/news signal integration."""
 
+from datetime import datetime, timezone
+from io import BytesIO
+from urllib.error import HTTPError
+
 import pandas as pd
 
-from simple_backtest.news import NewsArticle, build_daily_news_signal, score_title
+from simple_backtest.news import (
+    GDELTNewsProvider,
+    NewsArticle,
+    build_daily_news_signal,
+    score_title,
+)
 from simple_backtest.strategy.rsi_news import NewsAwareRSIStrategy, RSIStrategy, calculate_rsi
 
 
@@ -85,6 +94,43 @@ def test_news_gate_blocks_negative_rsi_entry():
     # made using the window ending on 2020-01-11; it is therefore usable.
     prediction = strategy.predict(data, [])
     assert prediction["signal"] == "hold"
+
+
+def test_gdelt_provider_retries_rate_limit(monkeypatch):
+    calls = 0
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"articles": []}'
+
+    def fake_urlopen(request, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise HTTPError(
+                request.full_url,
+                429,
+                "Too Many Requests",
+                {"Retry-After": "0"},
+                BytesIO(),
+            )
+        return Response()
+
+    monkeypatch.setattr("simple_backtest.news.urlopen", fake_urlopen)
+    provider = GDELTNewsProvider(max_retries=1, backoff_seconds=0.001)
+    articles = provider.fetch(
+        "VOO OR Vanguard",
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
+        datetime(2024, 1, 2, tzinfo=timezone.utc),
+    )
+    assert articles == []
+    assert calls == 2
 
 
 def test_score_title_is_bounded_and_transparent():

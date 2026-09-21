@@ -162,7 +162,9 @@ provider-routed `get_daily_ohlcv` API. The comparison runs the original local
 RSI baseline and an explicit `rsi_itoflow` leg under identical conditions, then
 adds `rsi_itoflow_news` only when historical news is available.
 
-Historical news is intentionally sourced separately from market data. The
+Historical news is intentionally sourced separately from market data. Itoflow's
+public quant modules used here provide market data, indicators, and diagnostics;
+we found no Itoflow news-history API in the available library surface. The
 example uses GDELT DOC 2.0 article-list results and treats GDELT's `seendate` as
 an availability timestamp. It does not use a later article retrieval time or
 assume that the market-data provider contains historical news. The signal is
@@ -170,6 +172,15 @@ aggregated into an event-level signal while preserving each article's exact
 availability timestamp. The strategy uses a strict prior-timestamp cutoff; for
 daily bars, the engine supplies the prior completed bar, so same-day intraday
 articles cannot affect that morning's trade.
+
+The GDELT client now retries HTTP 429 responses sequentially, honors a numeric
+`Retry-After` header when supplied, and otherwise uses capped exponential
+backoff. It also caches the fetched article/signal files in the output
+directory so successful history can be reused. A persistent 429 or non-JSON
+response still fails closed. `yfinance` can provide a current/recent `Ticker.news`
+feed, but it is not treated here as a complete historical point-in-time archive
+for a 2022–2024 backtest; use it only with an independently captured, timestamped
+news cache.
 
 Run a held-out comparison (requires the Itoflow quant package and network
 access to GDELT):
