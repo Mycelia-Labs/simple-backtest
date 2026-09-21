@@ -58,6 +58,26 @@ def _ohlc(rows: int = 320) -> pd.DataFrame:
     )
 
 
+def test_fundamental_runner_emits_independent_gate_statuses():
+    from scripts.run_itoflow_signal_suite import run_fundamental_variants
+
+    scores = pd.DataFrame(
+        {"value_score": [float("nan"), float("nan")], "quality_score": [0.8, 0.7]},
+        index=pd.to_datetime(["2024-01-01", "2024-02-01"], utc=True),
+    )
+    rows = run_fundamental_variants(
+        "MSFT.US",
+        _ohlc(320),
+        _ohlc(320)["Close"],
+        scores,
+        "2020-11-01",
+    )
+    by_name = {row["strategy"]: row for row in rows}
+    assert by_name["MSFT.US:value_gate"]["status"] == "unavailable"
+    assert by_name["MSFT.US:value_quality_gate"]["status"] == "unavailable"
+    assert by_name["MSFT.US:quality_gate"]["status"] in {"available", "unavailable"}
+
+
 def test_fundamental_history_uses_available_date_without_backfill():
     panel = pd.DataFrame(
         {

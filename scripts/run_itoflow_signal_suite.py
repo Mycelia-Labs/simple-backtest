@@ -182,7 +182,18 @@ def run_fundamental_variants(
         for variant in FUNDAMENTAL_VARIANTS:
             rows.append({"strategy": f"{symbol}:{variant}", "status": "unavailable", "unavailable_reason": reason})
         return rows
+    value_valid = "value_score" in scores and scores["value_score"].notna().any()
+    quality_valid = "quality_score" in scores and scores["quality_score"].notna().any()
+    validity = {
+        "value_gate": (value_valid, "No valid dated value scores/cross-section."),
+        "quality_gate": (quality_valid, "No valid dated quality scores/cross-section."),
+        "value_quality_gate": (value_valid and quality_valid, "Both dated value and quality scores are required."),
+    }
     for variant in FUNDAMENTAL_VARIANTS:
+        valid, reason = validity[variant]
+        if not valid:
+            rows.append({"strategy": f"{symbol}:{variant}", "status": "unavailable", "unavailable_reason": reason})
+            continue
         strategy = ItoflowSignalStrategy(
             variant=variant,
             symbol=symbol,
@@ -300,6 +311,14 @@ def main() -> int:
         price_comparison["return_delta_vs_voo_benchmark_pct_points"] = price_comparison["total_return"] - voo_row["total_return"]
         price_comparison["sharpe_delta_vs_voo_benchmark"] = price_comparison["sharpe_ratio"] - voo_row["sharpe_ratio"]
         price_comparison["drawdown_delta_vs_voo_benchmark_pct_points"] = price_comparison["max_drawdown"] - voo_row["max_drawdown"]
+    if comparison_common_dates is not None:
+        comparison_metadata = {
+            "common_heldout_start": pd.Timestamp(args.holdout_start).date().isoformat(),
+            "common_heldout_end": pd.Timestamp(data[target_symbols[0]].index[-1]).date().isoformat(),
+            "common_heldout_count": int((data[target_symbols[0]].index >= pd.Timestamp(args.holdout_start, tz="UTC")).sum()),
+        }
+        for key, value in comparison_metadata.items():
+            price_comparison[key] = value
     price_comparison.to_csv(args.output_dir / "price_comparison.csv", index=False)
 
     fundamental_rows: list[dict[str, Any]] = []

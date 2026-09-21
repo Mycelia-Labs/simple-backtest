@@ -214,7 +214,45 @@ This remains a simulation/research example. It does not place orders or connect
 to a broker.
 
 
-## Latest Five-Year SPY Run
+## Latest Five-Year MSFT Run
+
+The same suite can run MSFT.US as a stock target:
+
+```bash
+PYTHONPATH=. python scripts/run_itoflow_signal_suite.py \\
+  --target-symbol MSFT.US --market-proxy SPY.US --last-five-years \\
+  --output-dir research_outputs/msft_itoflow_signal_suite
+```
+
+The latest available close was 2026-09-18. Evaluation was 2021-09-20 through
+2026-09-18, with 2020-07-13 through 2021-09-17 reserved as a 300-row warm-up.
+VOO.US was also loaded separately and evaluated as an explicit fully invested
+benchmark on the common held-out calendar. Accounting used $10,000 capital,
+open execution, 0.1% commission, final liquidation, and Itoflow adjusted Close
+with raw_close retained for audit.
+
+| MSFT variant | Return | Sharpe | Max drawdown | Trades | Avg exposure | Avg cash |
+|---|---:|---:|---:|---:|---:|---:|
+| Original RSI baseline | 4.7562% | 0.1693 | 15.9957% | 28 | 14.71% | 85.29% |
+| Itoflow RSI | 15.5670% | 0.4453 | 12.0598% | 34 | 15.68% | 84.32% |
+| Residual mean reversion | 2.4193% | 0.1005 | 18.5895% | 24 | 21.30% | 78.70% |
+| SuperTrend | 17.4831% | 0.5141 | 9.6718% | 40 | 18.24% | 81.76% |
+| Dip score | 0.0000% | 0.0000 | 0.0000% | 0 | 0.00% | 100.00% |
+| Volatility-scaled | 5.2245% | 0.5049 | 3.3101% | 34 | 4.30% | 95.70% |
+| Combined | 20.3402% | 0.7126 | 11.0972% | 82 | 8.81% | 91.19% |
+| MSFT buy-and-hold | 74.7475% | 0.5367 | 36.4600% | 2 | 99.95% | 0.59% |
+| VOO buy-and-hold | 87.3775% | 0.8145 | 26.3104% | 2 | 99.94% | 0.38% |
+
+The Itoflow RSI added 10.8107 percentage points versus the original RSI;
+SuperTrend added 12.7268 points; volatility-scaled sizing added 0.4683 points;
+and the combined rule added 15.5840 points. All active strategies lagged fully
+invested VOO buy-and-hold, and fixed-share strategies held substantial cash.
+
+The three MSFT fundamental rows are preserved as independently unavailable.
+The exact missing input was an Itoflow/EODHD `get_daily_prices` stock-universe
+request timing out at approximately 15 seconds while preparing the required
+24-stock dated cross-section. No current screener snapshot was backfilled.
+
 
 Run the unchanged fixed-10-share RSI baseline and every price-based Itoflow
 variant on SPY, using VOO as the separately loaded market proxy:
