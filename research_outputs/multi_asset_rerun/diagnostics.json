@@ -1,7 +1,7 @@
 {
   "settings": {
     "branch": "research/itoflow-rsi-news-signal",
-    "commit": "61ebd2d",
+    "commit": "8476f36",
     "latest_close": "2026-09-21",
     "warmup_start": "2020-07-14",
     "holdout_start": "2021-09-21",
