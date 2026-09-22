@@ -36,8 +36,12 @@ def test_fundamental_rows_reconcile_against_target_baseline_and_voo():
         {"strategy":"MSFT.US:quality_gate","total_return":6.0,"sharpe_ratio":.6,"max_drawdown":7.0},
         {"strategy":"VOO.US:buy_hold","total_return":10.0,"sharpe_ratio":1.0,"max_drawdown":10.0},
     ])
-    out=mod.target_deltas(rows,["AAPL.US","MSFT.US"],"VOO.US:buy_hold")
+    fundamentals=rows.iloc[[1,3]].copy()
+    out=mod.add_fundamental_deltas(fundamentals,rows,["AAPL.US","MSFT.US"],"VOO.US:buy_hold")
     a=out.loc[out.strategy=="AAPL.US:value_gate"].iloc[0]
     m=out.loc[out.strategy=="MSFT.US:quality_gate"].iloc[0]
     assert (a.return_delta_vs_rsi_pct_points, a.sharpe_delta_vs_rsi, a.drawdown_delta_vs_rsi_pct_points)==(2.0,.2,-2.0)
     assert (m.return_delta_vs_voo_benchmark_pct_points, m.sharpe_delta_vs_voo_benchmark, m.drawdown_delta_vs_voo_benchmark_pct_points)==(-4.0,-.4,-3.0)
+    artifact=pd.read_csv("research_outputs/multi_asset_rerun/fundamental_comparison.csv")
+    required={"return_delta_vs_rsi_pct_points","sharpe_delta_vs_rsi","drawdown_delta_vs_rsi_pct_points","return_delta_vs_voo_benchmark_pct_points","sharpe_delta_vs_voo_benchmark","drawdown_delta_vs_voo_benchmark_pct_points"}
+    assert required.issubset(artifact.columns)
