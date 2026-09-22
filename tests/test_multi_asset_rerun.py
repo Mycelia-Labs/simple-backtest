@@ -31,3 +31,18 @@ def test_fundamental_delta_columns_exist_and_reconcile():
     required={"return_delta_vs_rsi_pct_points","sharpe_delta_vs_rsi","drawdown_delta_vs_rsi_pct_points","return_delta_vs_voo_benchmark_pct_points"}
     row=pd.DataFrame([{"strategy":"AAPL.US:quality_gate","total_return":5.,"sharpe_ratio":.5,"max_drawdown":2.},{"strategy":"AAPL.US:rsi_baseline","total_return":3.,"sharpe_ratio":.3,"max_drawdown":4.},{"strategy":"VOO.US:buy_hold","total_return":10.,"sharpe_ratio":1.,"max_drawdown":8.}])
     for col in required: assert col in {"return_delta_vs_rsi_pct_points","sharpe_delta_vs_rsi","drawdown_delta_vs_rsi_pct_points","return_delta_vs_voo_benchmark_pct_points"}
+
+def test_fundamental_rows_reconcile_against_target_baseline_and_voo():
+    import scripts.run_multi_asset_rerun as mod
+    rows = pd.DataFrame([
+        {"strategy":"AAPL.US:rsi_baseline","total_return":3.0,"sharpe_ratio":.3,"max_drawdown":4.0},
+        {"strategy":"AAPL.US:value_gate","total_return":5.0,"sharpe_ratio":.5,"max_drawdown":2.0},
+        {"strategy":"MSFT.US:rsi_baseline","total_return":4.0,"sharpe_ratio":.4,"max_drawdown":8.0},
+        {"strategy":"MSFT.US:quality_gate","total_return":6.0,"sharpe_ratio":.6,"max_drawdown":7.0},
+        {"strategy":"VOO.US:buy_hold","total_return":10.0,"sharpe_ratio":1.0,"max_drawdown":10.0},
+    ])
+    out=mod.target_deltas(rows,["AAPL.US","MSFT.US"],"VOO.US:buy_hold")
+    a=out.loc[out.strategy=="AAPL.US:value_gate"].iloc[0]
+    m=out.loc[out.strategy=="MSFT.US:quality_gate"].iloc[0]
+    assert (a.return_delta_vs_rsi_pct_points, a.sharpe_delta_vs_rsi, a.drawdown_delta_vs_rsi_pct_points)==(2.0,.2,-2.0)
+    assert (m.return_delta_vs_voo_benchmark_pct_points, m.sharpe_delta_vs_voo_benchmark, m.drawdown_delta_vs_voo_benchmark_pct_points)==(-4.0,-.4,-3.0)

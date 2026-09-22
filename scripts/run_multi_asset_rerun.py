@@ -8,7 +8,7 @@ secrets.
 """
 from __future__ import annotations
 
-import argparse, json, time
+import argparse, json, time, subprocess, hashlib
 from pathlib import Path
 from typing import Any
 import pandas as pd
@@ -112,7 +112,7 @@ def main():
         for col,metric in [("return_delta_vs_voo_benchmark_pct_points","total_return"),("sharpe_delta_vs_voo_benchmark","sharpe_ratio"),("drawdown_delta_vs_voo_benchmark_pct_points","max_drawdown")]:
             fundamental.loc[mask,col]=fundamental.loc[mask,metric]-voo[metric]
     fundamental.to_csv(args.output_dir/"fundamental_comparison.csv",index=False)
-    manifest={"settings":settings,"provider_diagnosis":{"prior_error":"HTTPSConnectionPool(host='eodhd.com', port=443): Read timed out (read timeout about 14.99 seconds)","interpretation":"Network read timeout to host eodhd.com over HTTPS port 443; not an HTTP status code. No authentication or rate-limit conclusion is inferred.","method":"ito_quant.market_data.get_daily_prices","request":"24-stock universe price fetch","batch_size":args.batch_size,"retries":args.retries,"batches":batches,"propagated_failure":"The previous single-call try/except propagated one timeout message to every symbol; this rerun records per-batch outcomes."},"fundamentals":{"status":fund_status,"reason":fund_reason,"ETF_fundamentals":"not applicable for SPY.US or IWM.US"},"news":"Not used; GDELT remains unavailable/rate-limited.","run_status":"price suite completed; fundamental rows are available or explicitly unavailable per above","command":"PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1","artifact_paths":["price_comparison.csv","fundamental_comparison.csv","diagnostics.json"]}
+    manifest={"settings":settings,"provider_diagnosis":{"prior_error":"HTTPSConnectionPool(host='eodhd.com', port=443): Read timed out (read timeout about 14.99 seconds)","interpretation":"Network read timeout to host eodhd.com over HTTPS port 443; not an HTTP status code. No authentication or rate-limit conclusion is inferred.","method":"ito_quant.market_data.get_daily_prices","request":"24-stock universe price fetch","batch_size":args.batch_size,"retries":args.retries,"batches":batches,"propagated_failure":"The previous single-call try/except propagated one timeout message to every symbol; this rerun records per-batch outcomes."},"fundamentals":{"status":fund_status,"reason":fund_reason,"ETF_fundamentals":"not applicable for SPY.US or IWM.US"},"news":"Not used; GDELT remains unavailable/rate-limited.","run_status":"price suite completed; fundamental rows are available or explicitly unavailable per above","command":"PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1","artifact_paths":["price_comparison.csv","fundamental_comparison.csv","diagnostics.json"],"artifact_sha256":{k:hashlib.sha256((args.output_dir/k).read_bytes()).hexdigest() for k in ["price_comparison.csv","fundamental_comparison.csv","diagnostics.json"]}}
     (args.output_dir/"diagnostics.json").write_text(json.dumps(manifest,indent=2,default=str))
     print(results.to_string(index=False)); print(json.dumps(manifest,indent=2,default=str))
 
