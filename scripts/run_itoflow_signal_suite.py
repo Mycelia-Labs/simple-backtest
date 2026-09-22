@@ -278,47 +278,33 @@ def main() -> int:
         data["MSFT.US"] = data["MSFT.US"].loc[data["MSFT.US"].index.intersection(market_prices.index)]
         comparison_common_dates = data["MSFT.US"].index
     raw["market_proxy"] = market_symbol
-    raw["settings"]["latest_available_close"] = {
-        symbol: pd.Timestamp(frame.index[-1]).date().isoformat() for symbol, frame in data.items()
-    }
+    raw["settings"]["latest_available_close"] = {symbol: pd.Timestamp(frame.index[-1]).date().isoformat() for symbol, frame in data.items()}
     raw["settings"]["warmup_start"] = pd.Timestamp(data[target_symbols[0]].index[0]).date().isoformat()
     raw["settings"]["evaluation_start"] = args.holdout_start
     raw["settings"]["evaluation_end"] = pd.Timestamp(data[target_symbols[0]].index[-1]).date().isoformat()
-    price_rows: list[dict[str, Any]] = []
+    price_rows = []
     for symbol in target_symbols:
         price_rows.extend(run_price_variants(symbol, data[symbol], market_prices, args.holdout_start))
-
-    benchmark_names = []
+    benchmark_names=[]
     for symbol in target_symbols:
-        benchmark_name = f"{symbol}:buy_hold"
-        benchmark = FullyInvestedBuyAndHoldStrategy(name=benchmark_name)
-        price_rows.append(run_strategy(benchmark.get_name(), benchmark, data[symbol], args.holdout_start))
-        benchmark_names.append(benchmark_name)
-    comparison_benchmark = None
+        name=f"{symbol}:buy_hold"; b=FullyInvestedBuyAndHoldStrategy(name=name)
+        price_rows.append(run_strategy(name,b,data[symbol],args.holdout_start)); benchmark_names.append(name)
+    comparison_benchmark=None
     if target_symbols == ["MSFT.US"]:
-        voo_benchmark_prices = load_ohlcv("VOO.US", args.start, args.end).loc[comparison_common_dates]
-        voo_benchmark = FullyInvestedBuyAndHoldStrategy(name="VOO.US:buy_hold")
-        price_rows.append(run_strategy(voo_benchmark.get_name(), voo_benchmark, voo_benchmark_prices, args.holdout_start))
-        comparison_benchmark = "VOO.US:buy_hold"
-        voo_benchmark_prices.to_csv(args.output_dir / "VOO_US_ohlcv.csv")
-
-    for symbol, frame in data.items():
-        frame.to_csv(args.output_dir / f"{symbol.replace('.', '_')}_ohlcv.csv")
-    benchmark_name = benchmark_names[0] if len(benchmark_names) == 1 else None
-    price_comparison = add_deltas(price_rows, benchmark_name=benchmark_name)
-    if comparison_benchmark is not None:
-        voo_row = price_comparison.loc[price_comparison["strategy"] == comparison_benchmark].iloc[0]
-        price_comparison["return_delta_vs_voo_benchmark_pct_points"] = price_comparison["total_return"] - voo_row["total_return"]
-        price_comparison["sharpe_delta_vs_voo_benchmark"] = price_comparison["sharpe_ratio"] - voo_row["sharpe_ratio"]
-        price_comparison["drawdown_delta_vs_voo_benchmark_pct_points"] = price_comparison["max_drawdown"] - voo_row["max_drawdown"]
+        voo=load_ohlcv("VOO.US",args.start,args.end).loc[comparison_common_dates]
+        name="VOO.US:buy_hold"; b=FullyInvestedBuyAndHoldStrategy(name=name)
+        price_rows.append(run_strategy(name,b,voo,args.holdout_start)); comparison_benchmark=name
+        voo.to_csv(args.output_dir/"VOO_US_ohlcv.csv")
+    for symbol,frame in data.items(): frame.to_csv(args.output_dir/f"{symbol.replace('.', '_')}_ohlcv.csv")
+    price_comparison=add_deltas(price_rows, benchmark_name=benchmark_names[0] if len(benchmark_names)==1 else None)
+    if comparison_benchmark:
+        bench=price_comparison.loc[price_comparison.strategy==comparison_benchmark].iloc[0]
+        price_comparison["return_delta_vs_voo_benchmark_pct_points"]=price_comparison.total_return-bench.total_return
+        price_comparison["sharpe_delta_vs_voo_benchmark"]=price_comparison.sharpe_ratio-bench.sharpe_ratio
+        price_comparison["drawdown_delta_vs_voo_benchmark_pct_points"]=price_comparison.max_drawdown-bench.max_drawdown
     if comparison_common_dates is not None:
-        comparison_metadata = {
-            "common_heldout_start": pd.Timestamp(args.holdout_start).date().isoformat(),
-            "common_heldout_end": pd.Timestamp(data[target_symbols[0]].index[-1]).date().isoformat(),
-            "common_heldout_count": int((data[target_symbols[0]].index >= pd.Timestamp(args.holdout_start, tz="UTC")).sum()),
-        }
-        for key, value in comparison_metadata.items():
-            price_comparison[key] = value
+        heldout=comparison_common_dates[comparison_common_dates>=pd.Timestamp(args.holdout_start,tz="UTC")]
+        for k,v in {"common_heldout_start":str(heldout[0].date()),"common_heldout_end":str(heldout[-1].date()),"common_heldout_count":int(len(heldout))}.items(): price_comparison[k]=v
     price_comparison.to_csv(args.output_dir / "price_comparison.csv", index=False)
 
     fundamental_rows: list[dict[str, Any]] = []
