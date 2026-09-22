@@ -1,7 +1,7 @@
 {
   "settings": {
     "branch": "research/itoflow-rsi-news-signal",
-    "commit": "6dba35264b457e3d9b2d31998cf957f5decdd54f",
+    "commit": "61ebd2d",
     "latest_close": "2026-09-21",
     "warmup_start": "2020-07-14",
     "holdout_start": "2021-09-21",
@@ -87,5 +87,6 @@
     "price_comparison.csv",
     "fundamental_comparison.csv",
     "diagnostics.json"
-  ]
+  ],
+  "command": "PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1"
 }
