@@ -1,0 +1,20 @@
+{
+  "holdout_start": "2024-01-01T00:00:00+00:00",
+  "holdout_end": "2024-12-31T00:00:00+00:00",
+  "commission_rate": 0.001,
+  "execution_price": "open",
+  "lookback_period": 50,
+  "news_availability_field": "GDELT seendate",
+  "baseline_vs_itoflow_return_delta_pct_points": 1.2635711290338998,
+  "baseline_vs_itoflow_sharpe_delta": -0.895391200815038,
+  "baseline_vs_itoflow_drawdown_delta_pct_points": 2.8133908362445363,
+  "baseline_vs_itoflow_trade_count_delta": 6,
+  "comparison_status": "news_unavailable",
+  "news_status": {
+    "source": "GDELT DOC 2.0",
+    "availability_timestamp": "seendate",
+    "query": "VOO OR Vanguard",
+    "status": "unavailable",
+    "reason": "GDELT returned a non-JSON response; the endpoint may be rate-limited or unavailable"
+  }
+}

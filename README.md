@@ -151,243 +151,85 @@ Max Drawdown: 30.60%
 Win Rate: 100.00%
 ```
 
-## 📚 Documentation
+## 📰 Historical News + RSI Research Example
 
-### Creating a Custom Strategy
+The repository now includes a reusable `RSIStrategy` and
+`NewsAwareRSIStrategy`. The latter keeps the original RSI entry/exit rules but
+adds a conservative, point-in-time news gate: negative news can block an
+oversold entry or force an exit. Itoflow's RSI helper is imported directly and
+is required by this research module; the runner loads OHLCV through Itoflow's
+provider-routed `get_daily_ohlcv` API. The comparison runs the original local
+RSI baseline and an explicit `rsi_itoflow` leg under identical conditions, then
+adds `rsi_itoflow_news` only when historical news is available.
 
-Implement your own strategy by inheriting from `Strategy` and defining the `predict()` method:
+Historical news is intentionally sourced separately from market data. Itoflow's
+public quant modules used here provide market data, indicators, and diagnostics;
+we found no Itoflow news-history API in the available library surface. The
+example uses GDELT DOC 2.0 article-list results and treats GDELT's `seendate` as
+an availability timestamp. It does not use a later article retrieval time or
+assume that the market-data provider contains historical news. The signal is
+aggregated into an event-level signal while preserving each article's exact
+availability timestamp. The strategy uses a strict prior-timestamp cutoff; for
+daily bars, the engine supplies the prior completed bar, so same-day intraday
+articles cannot affect that morning's trade.
 
-```python
-from simple_backtest import Strategy
+The GDELT client now retries HTTP 429 responses sequentially, honors a numeric
+`Retry-After` header when supplied, and otherwise uses capped exponential
+backoff. It writes fetched article and signal files as output artifacts for
+inspection and later user-managed caching. A persistent 429 or non-JSON
+response still fails closed. `yfinance` can provide a current/recent `Ticker.news`
+feed, but it is not treated here as a complete historical point-in-time archive
+for a 2022–2024 backtest; use it only with an independently captured, timestamped
+news cache.
 
-class MyStrategy(Strategy):
-    """Custom trading strategy."""
+Run a held-out comparison (requires the Itoflow quant package and network
+access to GDELT):
 
-    # The engine and optimizers reject configurations with shorter lookbacks.
-    required_history = 20
-
-    def __init__(self, threshold=100, name=None):
-        super().__init__(name=name or "MyStrategy")
-        self.threshold = threshold
-
-    def predict(self, data, trade_history):
-        """Generate trading signal.
-
-        Args:
-            data: OHLCV DataFrame with lookback window
-            trade_history: List of past trades
-
-        Returns:
-            Dict with keys: signal ("buy"/"hold"/"sell"), size, order_ids
-        """
-        current_price = data['Close'].iloc[-1]
-
-        # Simple logic: buy below threshold, sell above
-        if current_price < self.threshold and not self.has_position():
-            return self.buy(10)  # Buy 10 shares
-        elif current_price > self.threshold * 1.2 and self.has_position():
-            return self.sell_all()  # Sell all positions
-        else:
-            return self.hold()  # Do nothing
+```bash
+python scripts/run_rsi_news_comparison.py \\
+  --symbol AAPL.US \\
+  --start 2020-01-01 --end 2025-01-01 \\
+  --holdout-start 2023-01-01 \\
+  --output-dir research_outputs/aapl
 ```
 
-**Strategy Helper Methods:**
-- `self.has_position()` - Check if holding any shares
-- `self.get_position()` - Get current share count
-- `self.get_cash()` - Get available cash
-- `self.get_portfolio_value()` - Get total portfolio value
-- `self.buy(shares)` - Return buy signal
-- `self.sell(shares)` - Return sell signal
-- `self.sell_all()` - Sell all positions
-- `self.buy_percent(percent)` - Buy shares worth % of portfolio
-- `self.buy_cash(amount)` - Buy shares worth specific amount
+The runner uses identical dates, initial capital, open execution, 0.1%
+commission, RSI parameters, and final liquidation for all available strategies.
+It writes `comparison.csv` with total return, annualized Sharpe ratio, maximum
+drawdown, and trade count, plus `summary.json`, the news article cache, and the
+daily news signal. If historical news is unavailable, it still runs and
+reports both the original RSI baseline and `rsi_itoflow`; it marks only the
+news-aware leg as unavailable rather than substituting an empty or fabricated
+news signal. The default news thresholds are fixed before the held-out run;
+they are not tuned on the holdout period.
 
-### Configuration Presets
+The package tests use deterministic synthetic inputs and do not call external
+services:
 
-Quick configurations for common scenarios:
-
-```python
-from simple_backtest import BacktestConfig
-
-# Zero commission (for testing)
-config = BacktestConfig.zero_commission(initial_capital=10000)
-
-# Dense bar-data preset (not a latency/order-book HFT simulator)
-config = BacktestConfig.high_frequency(initial_capital=100000)
-
-# Swing trading (longer lookback, typical retail commission)
-config = BacktestConfig.swing_trading(initial_capital=10000)
-
-# Low percentage commission preset (0.01%)
-config = BacktestConfig.low_commission(initial_capital=10000)
+```bash
+pytest tests/test_rsi_news.py -q
 ```
 
-### Comparing Multiple Strategies
+This remains a simulation/research example. It does not place orders or connect
+to a broker.
 
-```python
-from simple_backtest import (
-    Backtest,
-    BacktestConfig,
-    MovingAverageStrategy,
-    BuyAndHoldStrategy,
-    DCAStrategy
-)
 
-# Create strategies
-strategies = [
-    MovingAverageStrategy(short_window=10, long_window=30, shares=10),
-    BuyAndHoldStrategy(shares=50),
-    DCAStrategy(investment_amount=500, interval_days=30)
-]
+## Latest Five-Year MSFT Run
 
-# Run backtest
-config = BacktestConfig.default(initial_capital=10000)
-backtest = Backtest(data, config)
-results = backtest.run(strategies)
+The latest multi-asset rerun supersedes the earlier embedded MSFT table. Use the
+committed artifacts and manifest for the exact, current numbers:
 
-# Compare strategies
-comparison = results.compare()
-print(comparison)
-
-# Get best strategy
-best = results.best_strategy('sharpe_ratio')
-print(f"Best: {best.name} (Sharpe: {best.metrics['sharpe_ratio']:.2f})")
-
-# Visualize
-results.plot_comparison().show()
+```bash
+PYTHONPATH=. python scripts/run_multi_asset_rerun.py \
+  --output-dir research_outputs/multi_asset_rerun \
+  --batch-size 6 --retries 2 --backoff 1
 ```
 
-### Parameter Optimization
-
-Find optimal strategy parameters using built-in optimizers:
-
-```python
-from simple_backtest import GridSearchOptimizer, BacktestConfig
-
-# Define parameter space
-param_space = {
-    'short_window': [5, 10, 15, 20],
-    'long_window': [30, 40, 50, 60],
-    'shares': [10]
-}
-
-# Run optimization
-optimizer = GridSearchOptimizer(verbose=True)
-results = optimizer.optimize(
-    data=data,
-    config=BacktestConfig.default(lookback_period=60),
-    strategy_class=MovingAverageStrategy,
-    param_space=param_space,
-    metric='sharpe_ratio'
-)
-
-# View top results
-print(results.head(5))
-```
-
-**Available Optimizers:**
-- `GridSearchOptimizer` - Exhaustive search (best for small spaces)
-- `RandomSearchOptimizer` - Random sampling (faster for large spaces)
-- `WalkForwardOptimizer` - Expanding training windows with chronological out-of-sample folds
-
-Set each strategy's `required_history` to the minimum number of rows its
-indicators need. Optimizers record parameter combinations that exceed
-`lookback_period` as failed candidates instead of running invalid simulations.
-Use an explicit `random_state` for reproducible random searches.
-
-### Custom Commission Models
-
-Create custom commission structures:
-
-```python
-from simple_backtest import Commission
-
-class TieredWithMinimum(Commission):
-    """Tiered commission with minimum fee."""
-
-    def __init__(self):
-        super().__init__(name="TieredMin")
-
-    def calculate(self, shares, price):
-        trade_value = shares * price
-
-        if trade_value < 1000:
-            commission = max(trade_value * 0.002, 1.0)  # 0.2%, min $1
-        elif trade_value < 10000:
-            commission = trade_value * 0.001  # 0.1%
-        else:
-            commission = trade_value * 0.0005  # 0.05%
-
-        return commission
-
-# Pass custom behavior explicitly to Backtest
-from simple_backtest import Backtest, BacktestConfig
-
-config = BacktestConfig.default(
-    commission_type="custom",
-    commission_value=0.0,
-)
-backtest = Backtest(data, config, commission_calculator=TieredWithMinimum())
-results = backtest.run([strategy])
-```
-
-Custom commission callbacks must be deterministic and side-effect free because
-the engine evaluates them for benchmark affordability as well as strategy fills.
-
-For a custom execution price, set `execution_price="custom"` and pass
-`execution_price_extractor=` to `Backtest`. Strategy exceptions raise with
-strategy/date/stage context by default; use `error_policy="continue"` only when
-you intentionally want structured diagnostics in `StrategyResult.errors`.
-
-### Execution and Timing Assumptions
-
-Signals receive only rows strictly before the execution bar, so a signal formed
-from the supplied window cannot see its own fill price. Orders fill at the
-configured bar price (`open`, `close`, `typical`, or `custom`). The legacy
-`vwap` option remains as a deprecated alias for the OHLC typical price
-`(high + low + close) / 3`; one OHLCV bar is not enough to calculate true VWAP.
-
-Execution realism is deterministic and opt-in:
-
-```python
-config = BacktestConfig.default(
-    slippage_bps=5,                 # adverse to both buys and sells
-    spread_bps=10,                  # half-spread applied in each direction
-    max_volume_participation=0.05,  # at most 5% of the execution bar's volume
-    final_liquidation=True,         # attempt to close on the final bar
-)
-```
-
-When volume participation caps an order, only the capped quantity is filled and
-the unfilled remainder is cancelled; the engine does not maintain resting
-orders. `final_liquidation=False` is the default, so open positions remain
-marked to the final close. Enabling it applies the same cost and volume rules to
-both strategies and the benchmark.
-
-Annualized metrics infer observations per year from the data's timestamp span.
-For short, irregular, or mixed-frequency data, set `periods_per_year`
-explicitly. DCA intervals are measured from successful fills, not rejected or
-zero-sized attempts.
-
-### Logging Control
-
-Control framework verbosity:
-
-```python
-from simple_backtest.utils import setup_logging, disable_logging, enable_debug_logging
-import logging
-
-# Default: WARNING level (minimal output)
-
-# For verbose output during optimization
-setup_logging(level=logging.INFO)
-
-# For debugging issues
-enable_debug_logging()
-
-# To suppress all output
-disable_logging()
-```
+The multi-asset manifest records the common calendar, warm-up, fixed settings,
+provider diagnosis, per-batch outcomes, exact command, code revision, and
+artifact hashes. IWM.US is the investable Russell 2000 ETF proxy, not the index.
+ETF fundamentals are not applicable; historical news is separate and unavailable
+when GDELT is rate-limited.
 
 ## 📊 Performance Metrics
 
@@ -510,3 +352,27 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Issues**: [GitHub Issues](https://github.com/LGuillermoAngaritaG/simple-backtest/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/LGuillermoAngaritaG/simple-backtest/discussions)
 - **Email**: guille2005_13@hotmail.com
+
+## Multi-asset rerun: AAPL, MSFT, SPY, and IWM
+
+The reproducible rerun command is:
+
+```bash
+PYTHONPATH=. python scripts/run_multi_asset_rerun.py \
+  --output-dir research_outputs/multi_asset_rerun \
+  --batch-size 6 --retries 2 --backoff 1
+```
+
+This requires Itoflow's `ito_quant` package and configured provider route. It
+uses the latest common fully covered calendar, reserves 300 prior trading rows
+for warm-up, keeps the existing $10,000/open/0.1% commission/final liquidation
+settings, and writes `price_comparison.csv`, `fundamental_comparison.csv`, and
+`diagnostics.json`. `IWM.US` is the investable Russell 2000 ETF proxy, not the
+Russell 2000 index. `VOO.US` is the common S&P 500 ETF buy-and-hold benchmark.
+
+The previous provider error was a network read timeout to `eodhd.com` over HTTPS
+port 443; port 443 is not an HTTP status code. It does not establish
+authentication failure or rate limiting. The rerun uses Itoflow `get_daily_prices`
+in six-symbol batches with two retries and exponential backoff, and records
+each batch outcome without logging credentials. Historical news is not part of
+this rerun because GDELT remains unavailable/rate-limited.
