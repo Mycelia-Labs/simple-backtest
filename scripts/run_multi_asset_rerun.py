@@ -49,6 +49,17 @@ def batch_prices(symbols, start, end, batch_size=6, retries=2, backoff=1.0):
     return frames,outcomes
 
 
+def add_fundamental_deltas(fundamental: pd.DataFrame, price_rows: pd.DataFrame, targets: list[str], benchmark: str) -> pd.DataFrame:
+    out=fundamental.copy()
+    bench=price_rows.loc[price_rows.strategy==benchmark].iloc[0]
+    for col in ["return_delta_vs_rsi_pct_points","sharpe_delta_vs_rsi","drawdown_delta_vs_rsi_pct_points","return_delta_vs_voo_benchmark_pct_points","sharpe_delta_vs_voo_benchmark","drawdown_delta_vs_voo_benchmark_pct_points"]: out[col]=float("nan")
+    for target in targets:
+        base=price_rows.loc[price_rows.strategy==f"{target}:rsi_baseline"].iloc[0]; mask=out.strategy.str.startswith(target+":")
+        for col,metric in [("return_delta_vs_rsi_pct_points","total_return"),("sharpe_delta_vs_rsi","sharpe_ratio"),("drawdown_delta_vs_rsi_pct_points","max_drawdown")]: out.loc[mask,col]=out.loc[mask,metric]-base[metric]
+        for col,metric in [("return_delta_vs_voo_benchmark_pct_points","total_return"),("sharpe_delta_vs_voo_benchmark","sharpe_ratio"),("drawdown_delta_vs_voo_benchmark_pct_points","max_drawdown")]: out.loc[mask,col]=out.loc[mask,metric]-bench[metric]
+    return out
+
+
 def target_deltas(frame: pd.DataFrame, targets: list[str], benchmark: str) -> pd.DataFrame:
     out = frame.copy()
     for target in targets:
@@ -100,17 +111,7 @@ def main():
     if not fund_rows:
         for s in ["AAPL.US","MSFT.US"]:
             for v in ["value_gate","quality_gate","value_quality_gate"]: fund_rows.append({"strategy":f"{s}:{v}","status":"unavailable","unavailable_reason":fund_reason})
-    fundamental=pd.DataFrame(fund_rows)
-    price_by_strategy=results.set_index("strategy")
-    for row in ["return_delta_vs_rsi_pct_points","sharpe_delta_vs_rsi","drawdown_delta_vs_rsi_pct_points","return_delta_vs_voo_benchmark_pct_points","sharpe_delta_vs_voo_benchmark","drawdown_delta_vs_voo_benchmark_pct_points"]: fundamental[row]=float("nan")
-    voo=price_by_strategy.loc["VOO.US:buy_hold"]
-    for target in ["AAPL.US","MSFT.US"]:
-        base=price_by_strategy.loc[f"{target}:rsi_baseline"]
-        mask=fundamental.strategy.str.startswith(target+":")
-        for col,metric in [("return_delta_vs_rsi_pct_points","total_return"),("sharpe_delta_vs_rsi","sharpe_ratio"),("drawdown_delta_vs_rsi_pct_points","max_drawdown")]:
-            fundamental.loc[mask,col]=fundamental.loc[mask,metric]-base[metric]
-        for col,metric in [("return_delta_vs_voo_benchmark_pct_points","total_return"),("sharpe_delta_vs_voo_benchmark","sharpe_ratio"),("drawdown_delta_vs_voo_benchmark_pct_points","max_drawdown")]:
-            fundamental.loc[mask,col]=fundamental.loc[mask,metric]-voo[metric]
+    fundamental=add_fundamental_deltas(pd.DataFrame(fund_rows), results, ["AAPL.US","MSFT.US"], "VOO.US:buy_hold")
     fundamental.to_csv(args.output_dir/"fundamental_comparison.csv",index=False)
     manifest={"settings":settings,"provider_diagnosis":{"prior_error":"HTTPSConnectionPool(host='eodhd.com', port=443): Read timed out (read timeout about 14.99 seconds)","interpretation":"Network read timeout to host eodhd.com over HTTPS port 443; not an HTTP status code. No authentication or rate-limit conclusion is inferred.","method":"ito_quant.market_data.get_daily_prices","request":"24-stock universe price fetch","batch_size":args.batch_size,"retries":args.retries,"batches":batches,"propagated_failure":"The previous single-call try/except propagated one timeout message to every symbol; this rerun records per-batch outcomes."},"fundamentals":{"status":fund_status,"reason":fund_reason,"ETF_fundamentals":"not applicable for SPY.US or IWM.US"},"news":"Not used; GDELT remains unavailable/rate-limited.","run_status":"price suite completed; fundamental rows are available or explicitly unavailable per above","command":"PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1","artifact_paths":["price_comparison.csv","fundamental_comparison.csv","diagnostics.json"],"artifact_sha256":{k:hashlib.sha256((args.output_dir/k).read_bytes()).hexdigest() for k in ["price_comparison.csv","fundamental_comparison.csv","diagnostics.json"]}}
     (args.output_dir/"diagnostics.json").write_text(json.dumps(manifest,indent=2,default=str))
