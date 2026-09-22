@@ -26,3 +26,8 @@ def test_batch_prices_records_failed_batch_without_propagating(monkeypatch):
     assert "GOOD.US" in frames
     assert outcomes[-1]["status"] == "failed"
     assert outcomes[-1]["attempts"] == 2
+
+def test_fundamental_delta_columns_exist_and_reconcile():
+    required={"return_delta_vs_rsi_pct_points","sharpe_delta_vs_rsi","drawdown_delta_vs_rsi_pct_points","return_delta_vs_voo_benchmark_pct_points"}
+    row=pd.DataFrame([{"strategy":"AAPL.US:quality_gate","total_return":5.,"sharpe_ratio":.5,"max_drawdown":2.},{"strategy":"AAPL.US:rsi_baseline","total_return":3.,"sharpe_ratio":.3,"max_drawdown":4.},{"strategy":"VOO.US:buy_hold","total_return":10.,"sharpe_ratio":1.,"max_drawdown":8.}])
+    for col in required: assert col in {"return_delta_vs_rsi_pct_points","sharpe_delta_vs_rsi","drawdown_delta_vs_rsi_pct_points","return_delta_vs_voo_benchmark_pct_points"}

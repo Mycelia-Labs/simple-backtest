@@ -721,3 +721,27 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Issues**: [GitHub Issues](https://github.com/LGuillermoAngaritaG/simple-backtest/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/LGuillermoAngaritaG/simple-backtest/discussions)
 - **Email**: guille2005_13@hotmail.com
+
+## Multi-asset rerun: AAPL, MSFT, SPY, and IWM
+
+The reproducible rerun command is:
+
+```bash
+PYTHONPATH=. python scripts/run_multi_asset_rerun.py \
+  --output-dir research_outputs/multi_asset_rerun \
+  --batch-size 6 --retries 2 --backoff 1
+```
+
+This requires Itoflow's `ito_quant` package and configured provider route. It
+uses the latest common fully covered calendar, reserves 300 prior trading rows
+for warm-up, keeps the existing $10,000/open/0.1% commission/final liquidation
+settings, and writes `price_comparison.csv`, `fundamental_comparison.csv`, and
+`diagnostics.json`. `IWM.US` is the investable Russell 2000 ETF proxy, not the
+Russell 2000 index. `VOO.US` is the common S&P 500 ETF buy-and-hold benchmark.
+
+The previous provider error was a network read timeout to `eodhd.com` over HTTPS
+port 443; port 443 is not an HTTP status code. It does not establish
+authentication failure or rate limiting. The rerun uses Itoflow `get_daily_prices`
+in six-symbol batches with two retries and exponential backoff, and records
+each batch outcome without logging credentials. Historical news is not part of
+this rerun because GDELT remains unavailable/rate-limited.
