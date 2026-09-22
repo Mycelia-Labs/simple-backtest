@@ -1,7 +1,7 @@
 {
   "settings": {
     "branch": "research/itoflow-rsi-news-signal",
-    "commit": "96c32e6a8281d593394ece662cce1b76e563dc34",
+    "commit": "0385b3eb45249673f0897e3bf83a0c64da62ab46",
     "latest_close": "2026-09-21",
     "warmup_start": "2020-07-14",
     "holdout_start": "2021-09-21",
@@ -82,11 +82,16 @@
     "ETF_fundamentals": "not applicable for SPY.US or IWM.US"
   },
   "news": "Not used; GDELT remains unavailable/rate-limited.",
-  "run_status": "price suite completed; fundamental rows are available or explicitly unavailable per above",
+  "run_status": "price suite completed at the recorded source revision; dated fundamental rows are available from the successful bounded-universe fetch and now include target-specific RSI/VOO deltas.",
   "artifact_paths": [
     "price_comparison.csv",
     "fundamental_comparison.csv",
     "diagnostics.json"
   ],
-  "command": "PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1"
+  "command": "PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1",
+  "artifact_sha256": {
+    "price_comparison.csv": "2aacd9269795b6028b8f958f87d4cd81fafbc227aedf6b762617b3bd055c41d6",
+    "fundamental_comparison.csv": "ca504869235aba5d1013374ddfb6a944c5bf61999e34887e5815c300c205c37c",
+    "diagnostics.json": "4815cd6d964b430c93e342aeb15a22bafb669c6df9501b09f2aae128942ef494"
+  }
 }
