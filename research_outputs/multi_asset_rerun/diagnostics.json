@@ -11,7 +11,8 @@
     "symbols": {
       "IWM.US": "investable Russell 2000 ETF proxy, not the index",
       "VOO.US": "S&P 500 ETF benchmark"
-    }
+    },
+    "report_test_revision": "f350716b909276e09aef7fc092889fb211c494f6"
   },
   "provider_diagnosis": {
     "prior_error": "HTTPSConnectionPool(host='eodhd.com', port=443): Read timed out (read timeout about 14.99 seconds)",
@@ -95,7 +96,7 @@
   },
   "final_report_provenance": {
     "current_branch_head_at_report": "626bd1dc6c613333d6cce6c4bc3e9e1af133cae8",
-    "full_suite_tests": "329 passed, 1 warning at current branch head",
+    "full_suite_tests": "329 passed, 1 warning at f350716",
     "single_uninterrupted_command_produced_all_artifacts": false,
     "price_comparison.csv": {
       "producing_run_revision": "0385b3eb45249673f0897e3bf83a0c64da62ab46",
@@ -112,6 +113,9 @@
     "diagnostics.json": {
       "producing_revision": "626bd1dc6c613333d6cce6c4bc3e9e1af133cae8",
       "completion_status": "provenance report; not evidence that one command generated every artifact"
-    }
+    },
+    "tested_revision": "f350716b909276e09aef7fc092889fb211c494f6",
+    "current_branch_head_when_saved": "f350716",
+    "diagnostics_self_hash": "omitted intentionally because a self-referential hash would change the file; price and fundamental artifact hashes are recorded."
   }
 }
