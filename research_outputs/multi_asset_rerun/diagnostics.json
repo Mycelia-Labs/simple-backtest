@@ -1,0 +1,91 @@
+{
+  "settings": {
+    "branch": "research/itoflow-rsi-news-signal",
+    "commit": "ad062bf9e6ca699794a44ec71c5bef1f5034493b",
+    "latest_close": "2026-09-21",
+    "warmup_start": "2020-07-14",
+    "holdout_start": "2021-09-21",
+    "holdout_end": "2026-09-21",
+    "common_observations": 1255,
+    "settings": "$10,000; open execution; 0.1% commission; final liquidation; 300-row warm-up; unchanged parameters",
+    "symbols": {
+      "IWM.US": "investable Russell 2000 ETF proxy, not the index",
+      "VOO.US": "S&P 500 ETF benchmark"
+    }
+  },
+  "provider_diagnosis": {
+    "prior_error": "HTTPSConnectionPool(host='eodhd.com', port=443): Read timed out (read timeout about 14.99 seconds)",
+    "interpretation": "Network read timeout to host eodhd.com over HTTPS port 443; not an HTTP status code. No authentication or rate-limit conclusion is inferred.",
+    "method": "ito_quant.market_data.get_daily_prices",
+    "request": "24-stock universe price fetch",
+    "batch_size": 6,
+    "retries": 2,
+    "batches": [
+      {
+        "symbols": [
+          "AAPL.US",
+          "MSFT.US",
+          "GOOGL.US",
+          "AMZN.US",
+          "META.US",
+          "NVDA.US"
+        ],
+        "attempts": 1,
+        "status": "success",
+        "error": null
+      },
+      {
+        "symbols": [
+          "JPM.US",
+          "JNJ.US",
+          "XOM.US",
+          "PG.US",
+          "UNH.US",
+          "HD.US"
+        ],
+        "attempts": 1,
+        "status": "success",
+        "error": null
+      },
+      {
+        "symbols": [
+          "CVX.US",
+          "COST.US",
+          "AVGO.US",
+          "BAC.US",
+          "WMT.US",
+          "PFE.US"
+        ],
+        "attempts": 1,
+        "status": "success",
+        "error": null
+      },
+      {
+        "symbols": [
+          "KO.US",
+          "ORCL.US",
+          "CSCO.US",
+          "CRM.US",
+          "ADBE.US",
+          "MRK.US"
+        ],
+        "attempts": 1,
+        "status": "success",
+        "error": null
+      }
+    ],
+    "propagated_failure": "The previous single-call try/except propagated one timeout message to every symbol; this rerun records per-batch outcomes."
+  },
+  "fundamentals": {
+    "status": "available",
+    "reason": null,
+    "ETF_fundamentals": "not applicable for SPY.US or IWM.US"
+  },
+  "news": "Not used; GDELT remains unavailable/rate-limited.",
+  "run_status": "price suite completed; fundamental rows are available or explicitly unavailable per above",
+  "artifact_paths": [
+    "price_comparison.csv",
+    "fundamental_comparison.csv",
+    "diagnostics.json"
+  ]
+}
