@@ -91,7 +91,27 @@
   "command": "PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1",
   "artifact_sha256": {
     "price_comparison.csv": "2aacd9269795b6028b8f958f87d4cd81fafbc227aedf6b762617b3bd055c41d6",
-    "fundamental_comparison.csv": "ca504869235aba5d1013374ddfb6a944c5bf61999e34887e5815c300c205c37c",
-    "diagnostics.json": "4815cd6d964b430c93e342aeb15a22bafb669c6df9501b09f2aae128942ef494"
+    "fundamental_comparison.csv": "ca504869235aba5d1013374ddfb6a944c5bf61999e34887e5815c300c205c37c"
+  },
+  "final_report_provenance": {
+    "current_branch_head_at_report": "626bd1dc6c613333d6cce6c4bc3e9e1af133cae8",
+    "full_suite_tests": "329 passed, 1 warning at current branch head",
+    "single_uninterrupted_command_produced_all_artifacts": false,
+    "price_comparison.csv": {
+      "producing_run_revision": "0385b3eb45249673f0897e3bf83a0c64da62ab46",
+      "command": "PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1",
+      "completion_status": "price suite completed before later fundamentals refresh interruption",
+      "postprocessed": "per-target RSI/VOO delta columns regenerated at 61ebd2d; current file must be treated as enriched output"
+    },
+    "fundamental_comparison.csv": {
+      "producing_run_revision": "e1d6a0c",
+      "command": "PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1",
+      "completion_status": "dated retrieval/scoring completed in the earlier bounded-fetch run; final refresh later interrupted",
+      "postprocessed": "target RSI/VOO delta columns regenerated at 7cdee85"
+    },
+    "diagnostics.json": {
+      "producing_revision": "626bd1dc6c613333d6cce6c4bc3e9e1af133cae8",
+      "completion_status": "provenance report; not evidence that one command generated every artifact"
+    }
   }
 }
