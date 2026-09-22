@@ -49,6 +49,21 @@ def batch_prices(symbols, start, end, batch_size=6, retries=2, backoff=1.0):
     return frames,outcomes
 
 
+def target_deltas(frame: pd.DataFrame, targets: list[str], benchmark: str) -> pd.DataFrame:
+    out = frame.copy()
+    for target in targets:
+        base = out.loc[out.strategy == f"{target}:rsi_baseline"].iloc[0]
+        mask = out.strategy.str.startswith(f"{target}:")
+        out.loc[mask, "return_delta_vs_rsi_pct_points"] = out.loc[mask, "total_return"] - base.total_return
+        out.loc[mask, "sharpe_delta_vs_rsi"] = out.loc[mask, "sharpe_ratio"] - base.sharpe_ratio
+        out.loc[mask, "drawdown_delta_vs_rsi_pct_points"] = out.loc[mask, "max_drawdown"] - base.max_drawdown
+    bench = out.loc[out.strategy == benchmark].iloc[0]
+    applicable = out.strategy.str.contains(":") & ~out.strategy.str.endswith(":buy_hold")
+    out.loc[applicable, "return_delta_vs_voo_benchmark_pct_points"] = out.loc[applicable, "total_return"] - bench.total_return
+    out.loc[applicable, "sharpe_delta_vs_voo_benchmark"] = out.loc[applicable, "sharpe_ratio"] - bench.sharpe_ratio
+    out.loc[applicable, "drawdown_delta_vs_voo_benchmark_pct_points"] = out.loc[applicable, "max_drawdown"] - bench.max_drawdown
+    return out
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--output-dir",type=Path,default=Path("research_outputs/multi_asset_rerun")); ap.add_argument("--batch-size",type=int,default=6); ap.add_argument("--retries",type=int,default=2); ap.add_argument("--backoff",type=float,default=1.0); args=ap.parse_args()
     args.output_dir.mkdir(parents=True,exist_ok=True)
@@ -69,7 +84,7 @@ def main():
             rows.append(run_strategy(st.get_name(),st,panels[s],str(holdout.date())))
         st=FullyInvestedBuyAndHoldStrategy(name=f"{s}:buy_hold"); rows.append(run_strategy(st.get_name(),st,panels[s],str(holdout.date())))
     voo=FullyInvestedBuyAndHoldStrategy(name="VOO.US:buy_hold"); rows.append(run_strategy(voo.get_name(),voo,panels[VOO],str(holdout.date())))
-    results=add_deltas(rows)
+    results=target_deltas(pd.DataFrame(rows), TARGETS, "VOO.US:buy_hold")
     results.to_csv(args.output_dir/"price_comparison.csv",index=False)
     for s,x in panels.items(): x.to_csv(args.output_dir/f"{s.replace('.','_')}_ohlcv.csv")
     # Diagnose dated-universe inputs with bounded batches; no secrets in error text.
@@ -86,7 +101,7 @@ def main():
         for s in ["AAPL.US","MSFT.US"]:
             for v in ["value_gate","quality_gate","value_quality_gate"]: fund_rows.append({"strategy":f"{s}:{v}","status":"unavailable","unavailable_reason":fund_reason})
     pd.DataFrame(fund_rows).to_csv(args.output_dir/"fundamental_comparison.csv",index=False)
-    manifest={"settings":settings,"provider_diagnosis":{"prior_error":"HTTPSConnectionPool(host='eodhd.com', port=443): Read timed out (read timeout about 14.99 seconds)","interpretation":"Network read timeout to host eodhd.com over HTTPS port 443; not an HTTP status code. No authentication or rate-limit conclusion is inferred.","method":"ito_quant.market_data.get_daily_prices","request":"24-stock universe price fetch","batch_size":args.batch_size,"retries":args.retries,"batches":batches,"propagated_failure":"The previous single-call try/except propagated one timeout message to every symbol; this rerun records per-batch outcomes."},"fundamentals":{"status":fund_status,"reason":fund_reason,"ETF_fundamentals":"not applicable for SPY.US or IWM.US"},"news":"Not used; GDELT remains unavailable/rate-limited.","run_status":"price suite completed; fundamental rows are available or explicitly unavailable per above","artifact_paths":["price_comparison.csv","fundamental_comparison.csv","diagnostics.json"]}
+    manifest={"settings":settings,"provider_diagnosis":{"prior_error":"HTTPSConnectionPool(host='eodhd.com', port=443): Read timed out (read timeout about 14.99 seconds)","interpretation":"Network read timeout to host eodhd.com over HTTPS port 443; not an HTTP status code. No authentication or rate-limit conclusion is inferred.","method":"ito_quant.market_data.get_daily_prices","request":"24-stock universe price fetch","batch_size":args.batch_size,"retries":args.retries,"batches":batches,"propagated_failure":"The previous single-call try/except propagated one timeout message to every symbol; this rerun records per-batch outcomes."},"fundamentals":{"status":fund_status,"reason":fund_reason,"ETF_fundamentals":"not applicable for SPY.US or IWM.US"},"news":"Not used; GDELT remains unavailable/rate-limited.","run_status":"price suite completed; fundamental rows are available or explicitly unavailable per above","command":"PYTHONPATH=. python scripts/run_multi_asset_rerun.py --output-dir research_outputs/multi_asset_rerun --batch-size 6 --retries 2 --backoff 1","artifact_paths":["price_comparison.csv","fundamental_comparison.csv","diagnostics.json"]}
     (args.output_dir/"diagnostics.json").write_text(json.dumps(manifest,indent=2,default=str))
     print(results.to_string(index=False)); print(json.dumps(manifest,indent=2,default=str))
 
